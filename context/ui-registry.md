@@ -18,4 +18,125 @@ After building any component — update this file with the component name, file 
 
 ## Components
 
-_Empty. Components will be added here as they are built._
+### Logo — `components/layout/Logo.tsx`
+
+Purple-gradient square (10px radius, 36x36 default) with white shield icon + "JobPilot" wordmark.
+
+```tsx
+<Logo href="/" size="sm" | "md" | "lg" showText={true} />
+```
+
+Classes:
+- Wrapper: `flex items-center gap-2`
+- Square: `h-9 w-9 rounded-[10px] flex items-center justify-center` — gradient `linear-gradient(45deg, #7C5CFC 0%, #4A2EC5 100%)`
+- Icon: white stroke, viewBox 0 0 24 24, h-5 w-5
+- Text: `font-bold text-[19px] text-text-darkest leading-7`
+
+### Navbar — `components/layout/Navbar.tsx`
+
+Sticky white top bar. Logo left, nav links center (md+), CTA right.
+
+- Wrapper: `sticky top-0 z-50 w-full bg-surface border-b border-border`
+- Inner: `mx-auto flex h-16 max-w-[1440px] items-center justify-between px-6`
+- Nav link active: `text-sm font-medium text-accent`
+- Nav link inactive: `text-sm font-medium text-text-dark hover:text-text-primary`
+- CTA button: `inline-flex items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-overlay transition-colors`
+
+### Footer — `components/layout/Footer.tsx`
+
+White surface, top border. Logo left, footer links center, copyright right (md+).
+
+- Wrapper: `w-full bg-surface border-t border-border`
+- Inner: `mx-auto flex max-w-[1440px] flex-col items-center justify-between gap-4 px-6 py-8 md:flex-row`
+- Link: `text-sm font-medium text-text-dark hover:text-text-primary transition-colors`
+- Copyright: `text-xs text-text-muted`
+
+### Hero — `components/homepage/Hero.tsx`
+
+Centered headline + subhead + 2 buttons + framed dashboard screenshot.
+
+- Section: `w-full bg-background`
+- Inner: `mx-auto max-w-[1440px] px-8 pt-20 pb-16 md:pt-28 md:pb-20`
+- Headline wrapper: `mx-auto flex max-w-3xl flex-col items-center text-center`
+- Headline: `text-4xl font-bold leading-tight tracking-tight text-text-darkest md:text-6xl`
+- Subhead: `mt-6 max-w-2xl text-base leading-6 text-text-secondary md:text-lg md:leading-7`
+- Button row: `mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4`
+- Primary button: `inline-flex items-center justify-center gap-2 rounded-md bg-text-darkest px-5 py-3 text-sm font-medium text-accent-foreground transition-colors hover:bg-overlay`
+- Secondary button: `inline-flex items-center justify-center rounded-md border border-border bg-surface px-5 py-3 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary`
+- Preview image wrapper: `mt-16 md:mt-20`
+- Preview frame: `overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_24px_48px_-12px_rgba(16,24,40,0.18)]`
+
+### FeatureSection1 — `components/homepage/FeatureSection1.tsx`
+
+Section heading + 2-col grid (features left, jobs table preview right).
+
+- Section: `w-full bg-background`
+- Inner: `mx-auto max-w-[1440px] px-8 py-20 md:py-24`
+- Heading block: `mx-auto mb-14 max-w-2xl text-center md:mb-16`
+- Heading: `text-3xl font-bold leading-tight tracking-tight text-text-darkest md:text-4xl`
+- Grid: `grid grid-cols-1 items-center gap-12 md:grid-cols-2 md:gap-16`
+- Feature icon wrapper: `mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full` — gradient `linear-gradient(45deg, rgba(124,92,252,0.15) 0%, rgba(74,46,197,0.15) 100%)`
+- Feature icon path stroke: `#7C5CFC` width 2.5
+- Feature title: `text-base font-semibold leading-6 text-text-primary`
+- Feature body: `text-sm leading-6 text-text-secondary`
+
+### JobsTablePreview — `components/homepage/JobsTablePreview.tsx`
+
+Mock jobs table card with 6 rows.
+
+- Wrapper: `overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_24px_48px_-12px_rgba(16,24,40,0.12)]`
+- Thead row: `border-b border-border bg-surface-secondary`
+- Th: `px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary`
+- Body row: `border-b border-border last:border-b-0 transition-colors hover:bg-surface-secondary`
+- Cell: `px-5 py-4 text-sm font-medium text-text-primary` (company)
+- Score: `text-sm font-semibold tabular-nums` — color by range (success/info/warning)
+- Bar track: `h-1 w-20 overflow-hidden rounded-full bg-border-light`
+- Bar fill: `h-full rounded-full` — color by range
+- Salary cell: `px-5 py-4 text-sm text-text-secondary tabular-nums`
+- Source badge (LinkedIn): `bg-linkedin-light text-linkedin`
+- Source badge (URL): `bg-surface-secondary text-text-secondary`
+- All badges: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`
+
+### FeatureSection2 — `components/homepage/FeatureSection2.tsx`
+
+Section heading + 2-col grid (agent log left, features right) on white surface.
+
+- Section: `w-full bg-surface`
+- Inner: `mx-auto max-w-[1440px] px-8 py-20 md:py-24`
+- (same heading + grid + feature classes as FeatureSection1)
+
+### AgentLog — `components/homepage/AgentLog.tsx`
+
+Dark terminal-style mock window with traffic-light dots, filename header, color-coded log lines.
+
+- Wrapper: `overflow-hidden rounded-2xl bg-overlay-dark shadow-[0_24px_48px_-12px_rgba(16,24,40,0.25)]`
+- Title bar: `flex items-center gap-2 border-b border-white/10 px-4 py-3`
+- Traffic dots: `h-3 w-3 rounded-full` — `bg-error` / `bg-warning` / `bg-success`
+- Filename: `ml-3 font-mono text-xs text-text-muted`
+- Body: `px-5 py-6 font-mono text-sm leading-7`
+- Line colors: `[SYSTEM]` → `text-info`, `[SCAN]` → `text-accent`, sub-step → `text-text-muted` w/ `pl-8`, `[ACTION]` → `text-success`, `...` → `text-warning`
+- Cursor: `mt-2 inline-block h-4 w-2 animate-pulse bg-text-muted`
+
+### Testimonial — `components/homepage/Testimonial.tsx`
+
+Centered quote, decorative quote icon, avatar + name + role.
+
+- Section: `w-full bg-background`
+- Inner: `mx-auto max-w-[1440px] px-8 py-20 md:py-24`
+- Content wrapper: `mx-auto max-w-3xl text-center`
+- Quote icon: `mx-auto h-10 w-10 text-accent`
+- Quote: `mt-8 text-2xl font-medium leading-snug text-text-primary md:text-3xl`
+- Avatar wrapper: `relative h-12 w-12 overflow-hidden rounded-full border border-border`
+- Name: `text-sm font-semibold text-text-primary`
+- Role: `text-xs text-text-secondary`
+
+### BottomCTA — `components/homepage/BottomCTA.tsx`
+
+Centered CTA card with accent-muted background.
+
+- Section: `w-full bg-surface`
+- Inner: `mx-auto max-w-[1440px] px-8 py-20 md:py-24`
+- Card: `mx-auto max-w-3xl rounded-2xl bg-accent-muted px-8 py-16 text-center md:px-12`
+- Headline: `text-3xl font-bold leading-tight tracking-tight text-text-darkest md:text-4xl`
+- Subhead: `mt-4 text-base leading-6 text-text-secondary md:text-lg`
+- Button row: `mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4` (same button styles as Hero)
