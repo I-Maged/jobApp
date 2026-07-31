@@ -1,96 +1,96 @@
-# Memory — Feature 03 PostHog Initialization
+# Memory — Feature 04 Database Schema
 
 Last updated: 2026-07-31
 
-## Status
-
-Feature 03 PostHog Initialization is complete at the code level. Browser init in `instrumentation-client.ts`, SSR-safe wrappers in `lib/posthog-client.ts`, server wrapper in `lib/posthog-server.ts`. The two existing auth-tier emissions (`login_provider_selected`, `logout_requested`) refactored to go through the new wrappers. Docs updated; events table in `code-standards.md` now lists all 6 events as the single source of truth.
-
-The 4 canonical event emissions (`job_search_started`, `job_found`, `profile_completed`, `company_researched`) are intentionally not wired — their call sites (Find Jobs search controls, Adzuna agent route, profile save Server Action, company research route) don't exist yet. They will land in features 06, 10, 13 with one-line `captureEvent` / `captureServerEvent` calls.
-
-Next feature: **04 Database Schema** — `profiles`, `agent_runs`, `jobs`, `agent_logs` tables + `resumes` storage bucket.
-
 ## What was built (this session)
 
-### Code
-- **`lib/posthog-client.ts`** — created. Exports `captureEvent(name, props)`, `identifyUser(userId, traits)`, `resetUser()`. SSR-safe (`isReady()` guards `typeof window !== "undefined"` + `posthog.capture` is a function). Each wrapper independently try/catch'd so a PostHog failure never breaks the calling component. No init logic — init lives in `instrumentation-client.ts` per Next.js 16 convention.
-- **`lib/posthog-server.ts`** — created. Exports `captureServerEvent(userId, event, properties)`. Creates a fresh `PostHog` instance per call with `flushAt: 1` and `flushInterval: 0`, calls `await client.shutdown()` in the `finally` block. Guards missing env vars with a dev-only `console.warn` and silent no-op in production.
-- **`components/auth/LoginButtons.tsx`** — refactored: replaced `posthog.capture("login_provider_selected", { provider })` with `captureEvent("login_provider_selected", { provider })`. Removed `import posthog from "posthog-js"`.
-- **`components/auth/AuthAwareCTAs.tsx`** — refactored: replaced `posthog.identify(...)`, `posthog.reset()`, `posthog.capture("logout_requested")` with `identifyUser(...)`, `resetUser()`, `captureEvent("logout_requested", {})`. Removed `import posthog from "posthog-js"`. Behavior unchanged.
-- **`package.json`** — added `posthog-node@^5.47.2`. `posthog-js ^1.409.5` was already present.
+Feature 04 Database Schema. All work was infrastructure (InsForge DB + storage) plus two doc edits — no app code was touched.
 
-### Docs
-- **`context/code-standards.md`** — PostHog Events table now lists all 6 events with file references (4 canonical + 2 auth-tier). Env var row fixed: `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` (was stale `NEXT_PUBLIC_POSTHOG_KEY`).
-- **`context/library-docs.md`** — PostHog section rewritten: documents `lib/posthog-client.ts` / `lib/posthog-server.ts` as the project entry points, with raw `posthog-js` / `posthog-node` patterns shown only as reference. Rules tightened: "Always use the project wrappers — never import posthog-js or posthog-node directly in components, actions, or API routes". Env var names corrected.
-- **`context/architecture.md`** — `posthog-client.ts` / `posthog-server.ts` descriptions updated to reflect the wrapper role (init lives in `instrumentation-client.ts`).
-- **`context/build-plan.md`** — Feature 03 description updated: init lives in `instrumentation-client.ts`, wrappers are SSR-safe / lifecycle-owning.
-- **`context/progress-tracker.md`** — Feature 03 marked complete. New "Decisions Made" section with 7 decisions.
+### InsForge infrastructure created
 
-### Verification
-- `npm run lint` — clean
-- `npx tsc --noEmit` — clean
-- `npm run build` — clean. Build output: `○ /`, `○ /_not-found`, `ƒ /callback`, `○ /login`, `ƒ Proxy (Middleware)` (no change from prior session)
+- **`public.profiles`** — 24 columns per `architecture.md`. PK `id uuid REFERENCES auth.users(id) ON DELETE CASCADE`. CHECK constraints on `experience_level`, `remote_preference`, `cover_letter_tone`, `work_authorization`. `is_complete boolean NOT NULL DEFAULT false`. `created_at` / `updated_at` default `now()`. Index `idx_profiles_updated_at`. RLS `profiles_owner_all` (`id = auth.uid()`).
+- **`public.agent_runs`** — 8 columns. FK to `profiles` cascade. CHECK on `status IN ('running','completed','failed')`. Indexes `idx_agent_runs_user_id`, `idx_agent_runs_user_recent`. RLS `agent_runs_owner_all`.
+- **`public.jobs`** — 23 columns. FK to `profiles` cascade. FK to `agent_runs` SET NULL on delete (URL-imported jobs have no run). CHECK on `source IN ('search','url')`, `job_type`, `match_score 0..100`. `company_research jsonb`. Indexes `idx_jobs_user_id`, `idx_jobs_user_found`, `idx_jobs_user_score`, `idx_jobs_run_id`. RLS `jobs_owner_all`.
+- **`public.agent_logs`** — 7 columns. FK to `profiles` cascade, FK to `agent_runs` cascade, FK to `jobs` set-null. CHECK on `level IN ('info','success','warning','error')`. Indexes `idx_agent_logs_run_id`, `idx_agent_logs_user_recent`. RLS `agent_logs_owner_all`.
+- **`storage.objects` RLS** — enabled; `storage_resumes_owner_all` policy gates by `bucket='resumes'` AND `key LIKE 'resumes/' || auth.uid() || '/%'` AND `uploaded_by = auth.uid()`.
+- **`resumes` storage bucket** — created via `insforge_create-bucket` (public-by-default; access gated entirely by storage RLS).
 
-## What was already in place (kept from prior sessions)
+### Docs edited
 
-- `instrumentation-client.ts` — Next.js 16 client init. Reads `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` and `NEXT_PUBLIC_POSTHOG_HOST`. Guards missing vars (dev-only `console.error`). `posthog.init(token, { api_host, capture_exceptions: true, debug: NODE_ENV === "development" })`.
-- `.env.example` — documents both public env keys
-- `.env` — real values for both keys (set prior, not re-verified this session)
-- `components/auth/LoginButtons.tsx` — client component with `useFormStatus`, `text-on-dark`, `currentColor` icons
-- `components/auth/AuthAwareCTAs.tsx` — three variants, reads session via `checkSessionAction()`, `identifyUser` after resolve, `captureEvent`+`resetUser` before sign-out
-- `actions/auth.ts` — `signInWithProvider` (with verifier guard), `signOutAction`, `checkSessionAction`
+- **`context/progress-tracker.md`** — Feature 04 marked complete under "Phase 1 — Foundation". Status block: "Last completed: 04 Database Schema", "Next: 05 Profile Page — Full UI". New "04 Database Schema" decisions section (11 decisions).
+- **`context/architecture.md`** — new "Row Level Security" subsection inserted between "InsForge Storage" and "Authentication". Table of policy name / predicate per table, plus the storage policy. Notes that `auth.uid()` is `SELECT nullif(auth.jwt() ->> 'sub', '')::uuid` and that the `resumes` bucket is public at the API layer but locked down by `storage_resumes_owner_all`.
 
-## Decisions made (still valid)
+## What was kept from prior sessions
 
-- **Init lives in `instrumentation-client.ts`, not `lib/posthog-client.ts`.** Next.js 16's client-side initialization point runs once at app boot — the only correct place to call `posthog.init`. The two wrappers hold capture/identify/reset helpers, not init.
-- **Browser wrappers are SSR-safe.** `isReady()` returns false on server or before init — wrappers no-op rather than throw. Each wrapper independently try/catch'd.
-- **Server wrapper owns the full lifecycle.** Fresh `PostHog` per call, `flushAt: 1`, `flushInterval: 0`, `await client.shutdown()` in `finally`. No long-lived server client — Next.js functions are short-lived, long-lived clients risk dropped events on cold shutdown.
-- **Only three files may import `posthog-js`/`posthog-node` directly: `instrumentation-client.ts`, `lib/posthog-client.ts`, `lib/posthog-server.ts`.** Every other module goes through the wrappers. Single migration surface.
-- **PostHog events table is the single source of truth.** 6 events total. The "no new events without updating this table first" rule preserved. Auth-tier events explicitly listed but flagged as not powering dashboard charts.
-- **Env var name is `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`** (matches `.env.example`, `instrumentation-client.ts`, `lib/posthog-server.ts`). The stale `NEXT_PUBLIC_POSTHOG_KEY` references in `code-standards.md` / `library-docs.md` were a real bug — fixed this session.
+- InsForge SDK instances in `lib/insforge-client.ts` and `lib/insforge-server.ts` — used as-is, no changes needed since the SDK treats `user_id` as a regular column.
+- All 9 context files unchanged in shape. Only the two listed above edited.
+- Nothing in `app/`, `agent/`, `actions/`, `components/`, `lib/`, `types/`, or `proxy.ts` was modified.
+
+## Decisions made
+
+- **Single RLS policy per table** (`<table>_owner_all`), `FOR ALL TO authenticated` with both `USING` and `WITH CHECK` set to the same predicate. One mental model: `user_id = auth.uid()`. `profiles` uses `id = auth.uid()` because its PK is the user id. Storage RLS independently uses `uploaded_by = auth.uid()` AND key prefix.
+- **`auth.uid()` is a real helper on InsForge.** Confirmed definition: `SELECT nullif(auth.jwt() ->> 'sub', '')::uuid`. JWT `sub` claim is set on every authenticated request, so the predicate works under the SDK's `createServerClient`.
+- **Cascade rules:** `profiles.id ← auth.users` cascade. `agent_runs.user_id`, `jobs.user_id`, `agent_logs.user_id` cascade (owner removed → their rows gone). `jobs.run_id` set null (URL-imported jobs have no run; deleting a run should not delete jobs the user already saved). `agent_logs.run_id` cascade (logs meaningless without run). `agent_logs.job_id` set null (job can be deleted without losing run-tied logs).
+- **All enums implemented as `text CHECK` constraints** — PostgREST surfaces them as `text` to the TS SDK; DB rejects bad values. No Postgres `CREATE TYPE` used.
+- **FK-scoped composite indexes for hot read paths:** `(user_id, found_at DESC)` and `(user_id, match_score DESC NULLS LAST)` on `jobs`, `(user_id, started_at DESC)` on `agent_runs`, `(user_id, created_at DESC)` on `agent_logs`, `(updated_at DESC)` on `profiles`.
+- **`resumes` bucket is public at the API layer** because the MCP tool has no `isPublic: false` flag. Closed the gap at the DB level — `storage_resumes_owner_all` is the only thing that matters for access.
+- **No DB-level validation on `company_research` shape.** Flexible dossier (9 fields, mixed scalars + arrays). Validation lives in agent code at the place that synthesizes the dossier.
+- **jsonb typing for `work_experience` / `education` is done at code boundaries** in handlers that read them (Feature 06 `actions/profile.ts` save; Feature 10 `agent/matcher.ts` read). Cast from `unknown` to a typed shape at the top of each handler.
+- **`is_complete` defaults to `false`.** Feature 06's `actions/profile.ts` will recompute it on save based on the required-field set from `build-plan.md` Feature 06.
+- **`storage_resumes_owner_all` is the only storage policy.** Any new buckets added in later features need their own policy.
+- **`pgcrypto` is pre-installed** on this InsForge instance — `gen_random_uuid()` works out of the box; no extension setup needed.
 
 ## Problems solved
 
-- **No code bugs surfaced this session.** All clean: lint, typecheck, build, and behavioral preservation of the two pre-existing emissions.
-- **Env var drift between code and docs.** `code-standards.md` env var table and `library-docs.md` both referenced `NEXT_PUBLIC_POSTHOG_KEY`, but `.env.example`, `instrumentation-client.ts`, and the new `lib/posthog-server.ts` all use `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`. Doc references corrected in this pass. The codebase was already consistent — only the docs were stale.
-- **postHog-js `capture` `posthog-js` returns `CaptureResult | undefined` for the overload that takes an EventName.** The browser wrapper accepts `string` event names (slightly looser than the typed overload) so it works for both the shorthand `captureEvent("name")` and `captureEvent("name", props)`. Internally caught in try/catch.
-- **posthog-node v5 type drift.** `client.d.ts` line 676 declares `shutdown(): void`, but the actual implementation in `client.js` awaits `super._shutdown()` so it's an async void. Calling convention `await client.shutdown()` is what works in practice — `library-docs.md` already shows this pattern, and the wrapper matches.
+- **`resumes` bucket could not be created private.** The `insforge_create-bucket` tool always sets `public: true`. Solved by enabling RLS on `storage.objects` and adding a key-prefix + `uploaded_by` predicate so that even though the bucket's flag is public, the row-level filter blocks every read or write outside `resumes/{auth.uid()}/`. Verified via `pg_class.relrowsecurity = true` on `storage.objects`.
+- **Open question resolved: InsForge exposes `auth.uid()` and `auth.jwt()`.** Verified by `SELECT n.nspname, p.proname, pg_get_functiondef(p.oid)` — both functions exist in the `auth` schema. The `auth.users` table also exists (10 columns, `id uuid PK`) so `profiles.id REFERENCES auth.users(id)` is the correct FK target.
+- **Open question resolved: PostgREST-style RLS works via `auth.uid() = auth.jwt() ->> 'sub'`.** No special InsForge predicate needed — the standard Supabase/PostgREST pattern applies. `FOR ALL TO authenticated` policy with `USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())` is sufficient.
 
 ## Current state
 
 Working:
-- PostHog init boots the browser session once per app load
-- `captureEvent`, `identifyUser`, `resetUser` work from Client Components
-- `captureServerEvent` works from Server Actions and Route Handlers (no real call sites yet, but wrapper verified by build)
-- Two auth events already fire through the wrappers: `login_provider_selected` (LoginButtons), `logout_requested` + identify/reset (AuthAwareCTAs)
-- Lint, typecheck, build all clean
+- All four tables exist on InsForge with full columns, FKs, indexes, RLS enabled, and owner-only policies attached
+- `storage.objects` has RLS enabled and a per-prefix owner-only policy
+- `resumes` bucket exists and is locked down by the storage policy
+- `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean. Build output unchanged: `○ /`, `○ /_not-found`, `ƒ /callback`, `○ /login`, `ƒ Proxy (Middleware)`
 
-Not done (deliberately deferred):
-- Wire-up of `job_search_started`, `job_found`, `profile_completed`, `company_researched` — call sites don't exist yet, they ship with features 06 / 10 / 13
-- Live verification that events arrive in PostHog — no browser session exercised this session
-- `posthog-setup-report.md` followup items ("Runtime delivery and attribution remain unresolved") — still valid, untouched
+Deferred until later features (intentional, by design):
+- `actions/profile.ts` save logic (Feature 06) — will use the new tables
+- `agent/matcher.ts` and `app/api/agent/find/route.ts` (Feature 10) — will read/write `jobs`
+- `agent/research.ts` (Feature 13) — will write `jobs.company_research`
+- Profile page UI (Feature 05)
+- Live exercise of RLS by a real authenticated request — confirmed via metadata + SQL inspection only; no browser round-trip this session
+
+Not yet covered (deferred to other features, by design):
+- Storage policies for additional buckets that later features may add
+- jsonb insert-time validation on `company_research` (rejected — keep validation in agent code)
+- Wire-up of `job_search_started`, `job_found`, `profile_completed`, `company_researched` PostHog events (still awaiting features 06 / 10 / 13)
 
 ## Next session starts with
 
-**Feature 04 Database Schema.**
+**Feature 05 Profile Page — Full UI.**
 
 Before implementing:
-1. Read `context/build-plan.md` Feature 04 block.
-2. Confirm exact column types / nullability with the user if any field feels ambiguous (already in `architecture.md` but worth re-checking against the InsForge Postgres reality — e.g. `text[]` arrays, `jsonb` for `work_experience` / `education` / `company_research`).
-3. Pick an RLS strategy — InsForge convention or project-specific. The plan says "Always filter by `user_id`" so RLS is the database-side enforcement, not just a code convention.
+1. Read `context/build-plan.md` Feature 05 block (already in context, no need to re-fetch).
+2. Decide whether to model the form sections as a single Client Component or split per section — depends on how big the form gets in real Tailwind. Lean toward a single `components/profile/ProfileForm.tsx` Client Component with internal section components, since shadcn primitives handle most of the layout.
+3. Confirm profile-banner "needs attention" requirements: percent ring, missing-field tags. Build placeholder logic only — real completion calc comes in Feature 06.
+4. Confirm whether `ResumeUpload.tsx` and `CompletionIndicator.tsx` from `architecture.md` are owned by Feature 05 or split across 05/06/07/08. Lean toward building UI shells for all three this pass; wiring + save logic lands in 06/07/08.
 
-Implementation order to minimize churn:
-1. Create tables in dependency order — `profiles` first (no FKs to project tables), then `agent_runs`, `jobs` (FK to `agent_runs`), `agent_logs` (FK to `agent_runs`). FK direction matters for InsForge PostgREST projection.
-2. Create `resumes` storage bucket. Confirm path scheme: `resumes/{user_id}/resume.pdf`.
-3. Add RLS policies on all 4 tables — owner-only read/write keyed on `auth.uid()` matching `user_id`.
-4. Update `lib/insforge-server.ts` — no schema-side changes needed since the SDK treats `user_id` as a regular column.
-5. Update `context/progress-tracker.md` with schema decisions.
+Implementation order:
+1. `components/profile/ProfileForm.tsx` (Client Component) — all form fields grouped per `build-plan.md` Feature 05 list, validated client-side only (no DB write this session).
+2. `components/profile/ResumeUpload.tsx` — drag-and-drop area, file picker fallback, "Extract from Resume" + "Generate Resume from Profile" buttons. Buttons disabled with tooltips this pass (real logic lands in 07/08).
+3. `components/profile/CompletionIndicator.tsx` — completion ring + missing-field tags. Mock completion percent.
+4. `app/profile/page.tsx` — assemble the three components, server-fetches nothing this pass (data wiring belongs to 06).
+5. Update `context/ui-registry.md` with the three new components + exact classes from `ui-tokens.md` / `ui-rules.md`.
+6. Update `context/progress-tracker.md` with the Feature 05 completion + decisions.
 
-After schema lands, the project is ready for **Phase 2 — Profile Page** (Feature 05 UI, 06 save logic).
+After 05 lands, Feature 06 wires `actions/profile.ts` against the schema just created. `is_complete` computation and resume upload to `resumes/{user_id}/resume.pdf` via `lib/insforge-server.ts`.
 
 ## Open questions
 
-- **RLS policy syntax for InsForge.** No InsForge skill is documented in `library-docs.md` (the file has sections for every other third party). Auth/middleware examples reference the SSR client but not policy authoring. May need to read InsForge docs or example policies to confirm the exact `auth.uid()` predicate form. Worth a quick `insforge_fetch-docs "instructions"` lookup at session start.
-- **`work_experience` and `education` as `jsonb`** — the schema uses `jsonb` for these arrays-of-objects. The InsForge SDK surfaces `jsonb` as `unknown` unless typed. Worth deciding once how typed casts happen — fetch + cast in a wrapper, or trust + assert at call sites.
-- **Whether `company_research` (jsonb on `jobs`) gets any RLS special-case.** Currently it's a column on a table that already has user-scoped RLS, so reading jobs implicitly gates research access. No issue expected, but it's the most complex jsonb shape in the schema — may want to validate the dossier JSON shape at insert time.
-- **`posthog-setup-report.md` followup items still open.** "Runtime delivery and attribution remain unresolved" and "Server-side attribution remains unresolved". Out of scope for this session (still relevant after Feature 04 — revisit whenever the first real PostHog dashboard query is needed).
+- **Whether `extract from resume` uses the same `app/api/resume/extract/route.ts` shape** as `architecture.md`. `build-plan.md` Feature 07 doesn't reference it explicitly but the architecture does. Should land with Feature 07 unless Feature 05 needs the route skeleton earlier.
+- **Whether `ProfileForm` should pre-fill email from session even before 06.** Email is server-known and the form could show it greyed-out as `architecture.md` describes. Low risk to wire in Feature 05 via a Server Component read of `auth.getUser()` — defer unless it stops being an empty-state field awkwardly.
+- **Profile banner colour rules** — `ui-rules.md` doesn't specify the incomplete-profile banner. Need to pick a token (probably `bg-accent-muted` / `text-accent` to match the BottomCTA precedent) when building the banner in Feature 05.
+- **Date picker UI for work experience** — `architecture.md` profile fields include "Start Date, End Date" as text. Confirm during Feature 05 whether they stay as `<input type="month">` or text only.
+- **`posthog-setup-report.md` followup items still open.** "Runtime delivery and attribution remain unresolved" and "Server-side attribution remains unresolved". Reopen when the first real PostHog dashboard query is needed (Feature 17).
+- **InsForge PostgREST typability for jsonb.** Code boundaries that cast `unknown` to typed shapes arrive at Feature 06. If the SDK offers a generic `T extends Json` shape, prefer that. Decide when first handler touches the cast — no schema-side change needed.

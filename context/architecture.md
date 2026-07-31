@@ -292,6 +292,24 @@ Access: authenticated users only, own files only.
 
 ---
 
+## Row Level Security
+
+All four application tables (`profiles`, `agent_runs`, `jobs`, `agent_logs`) have RLS enabled with a single owner-only policy per table, plus one policy on `storage.objects` to scope the `resumes` bucket by object path.
+
+| Table           | Policy                   | Predicate                                          |
+| --------------- | ------------------------ | -------------------------------------------------- |
+| `profiles`      | `profiles_owner_all`     | `id = auth.uid()` (PK = user id)                   |
+| `agent_runs`    | `agent_runs_owner_all`   | `user_id = auth.uid()`                             |
+| `jobs`          | `jobs_owner_all`         | `user_id = auth.uid()`                             |
+| `agent_logs`    | `agent_logs_owner_all`   | `user_id = auth.uid()`                             |
+| `storage.objects` | `storage_resumes_owner_all` | `bucket = 'resumes' AND key LIKE 'resumes/' \|\| auth.uid() \|\| '/%' AND uploaded_by = auth.uid()` |
+
+All policies are `FOR ALL TO authenticated` with both `USING` and `WITH CHECK` set to the same predicate. `auth.uid()` is the InsForge helper that reads the JWT `sub` claim — verified definition: `SELECT nullif(auth.jwt() ->> 'sub', '')::uuid`. Application code must always pass `user_id` (or the user id itself) on writes, so the `WITH CHECK` clause passes; the `USING` clause guarantees reads stay within scope even if a query forgets the `.eq('user_id', ...)` filter.
+
+The `resumes` bucket had to be created as public (the MCP tool has no `isPublic: false` flag). Access is enforced by `storage_resumes_owner_all` instead — only objects whose key sits under `resumes/{auth.uid()}/` and whose `uploaded_by` matches `auth.uid()` are visible to the requesting user.
+
+---
+
 ## Authentication
 
 - Provider: InsForge Auth

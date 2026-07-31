@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 1 — Foundation
-**Last completed:** 03 PostHog Initialization
-**Next:** 04 Database Schema
+**Last completed:** 04 Database Schema
+**Next:** 05 Profile Page — Full UI
 
 ---
 
@@ -19,7 +19,7 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 01 Homepage
 - [x] 02 Auth
 - [x] 03 PostHog Initialization
-- [ ] 04 Database Schema
+- [x] 04 Database Schema
 
 ### Phase 2 — Profile Page
 
@@ -49,6 +49,20 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 04 Database Schema
+
+- **RLS enforced on all 4 tables (`profiles`, `agent_runs`, `jobs`, `agent_logs`) plus `storage.objects`.** Single policy per table named `<table>_owner_all` targeted at `authenticated`, using `USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())`. `profiles.id` uses `id = auth.uid()` instead since its PK is the user id. `auth.uid()` is a real helper on InsForge — verified definition: `SELECT nullif(auth.jwt() ->> 'sub', '')::uuid`.
+- **All four ID columns are `uuid`** — `gen_random_uuid()` (`pgcrypto`) for new tables, `auth.users.id` for `profiles.id`. Cross-table FKs all use `uuid` and stay consistent.
+- **`profiles.id REFERENCES auth.users(id) ON DELETE CASCADE`.** Removing a user cleans up everything else via cascade in `agent_runs`, `jobs`, and `agent_logs`. Storage RLS uses `uploaded_by = auth.uid()` plus prefix gating so orphaned objects become inaccessible even if the row remains.
+- **`jobs.run_id` is nullable with `ON DELETE SET NULL`.** Same for `agent_logs.job_id`. Per `architecture.md`, URL-imported jobs have no run; deleting an `agent_runs` row should not cascade-delete the jobs it produced — they remain tied to the user via `user_id`. `agent_runs.user_id` and `agent_logs.user_id` cascade because runs/logs without a user row are meaningless.
+- **All four tables have FK-scoped composite indexes** for the hot read paths: `(user_id, found_at DESC)` and `(user_id, match_score DESC NULLS LAST)` on `jobs`, `(user_id, started_at DESC)` on `agent_runs`, `(user_id, created_at DESC)` on `agent_logs`. `profile` has `(updated_at DESC)` for the dashboard profile-banner check.
+- **Enums implemented as `text CHECK` constraints** on `profile.experience_level`, `profile.remote_preference`, `profile.cover_letter_tone`, `profile.work_authorization`, `agent_runs.status`, `jobs.source`, `jobs.job_type`, `agent_logs.level`. PostgREST exposes them as `text` to the TypeScript SDK; constraint rejects bad values at the DB.
+- **`resumes` storage bucket had to be created as public (the MCP tool has no `isPublic: false` flag).** Closed the gap by enabling RLS on `storage.objects` with a `storage_resumes_owner_all` policy: `bucket = 'resumes'` AND `key LIKE 'resumes/' || auth.uid() || '/%'` AND `uploaded_by = auth.uid()`. Each user can only read/write objects under `resumes/{their-own-uuid}/`. Resolved the read-side concern — `storage.objects` RLS is what the storage serving path checks, not just `bucket.public`.
+- **No DB-level validation on `company_research` shape.** It's a flexible dossier (9 fields, mixed scalars + arrays). Validation lives in agent code where the dossier is synthesized; an SQL `CHECK` on a jsonb shape would break the first time we tweak the structure.
+- **`work_experience` / `education` jsonb typing decision deferred.** InsForge PostgREST exposes jsonb as `unknown` to the TS SDK. The call sites that need typed access — `actions/profile.ts` save and `agent/matcher.ts` read — will cast at the boundary in code, not at the schema. Both jobs use `unknown` then narrow (`as ProfileWorkExperience`) at the top of each handler.
+- **`is_complete` defaults to `false`.** Server Action `actions/profile.ts` (Feature 06) will recompute it on save based on the same required-field set documented in `build-plan.md` Feature 06.
+- **`storage_resumes_owner_all` is the only storage policy.** Other buckets added in later features would need their own policy — keep them isolated.
 
 ### 03 PostHog
 
