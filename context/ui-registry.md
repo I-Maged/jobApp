@@ -198,3 +198,105 @@ Centered shell for login + callback routes. No nav/footer, brand logo above the 
 
 - Wrapper: `flex min-h-full flex-1 flex-col items-center justify-center bg-background px-6 py-12`
 - Logo block: `mb-8`
+
+---
+
+## Phase 2 — Profile Components (imprinted 2026-08-01)
+
+### ProfileBanner (inline header in `app/profile/page.tsx`)
+
+Top-of-page "needs attention" header card. Card surface + layout. Not factored to its own component — kept inline in the page because it composes `<CompletionIndicator />` and the page-level headline.
+
+- Card: `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]`
+- Inner row: `flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between`
+- Headline: `text-xl font-semibold leading-7 text-text-primary`
+- Body: `max-w-2xl text-sm leading-5 text-text-secondary`
+
+### CompletionIndicator — `components/profile/CompletionIndicator.tsx`
+
+File: `components/profile/CompletionIndicator.tsx`
+Last updated: 2026-08-01
+
+Horizontal pill: circular ring on the left, percent + missing-field tags on the right. Used in the profile banner header.
+
+| Property         | Class |
+| ---------------- | ----- |
+| Container        | `flex flex-col gap-3 rounded-xl border border-border bg-surface-secondary p-4 sm:flex-row sm:items-center sm:gap-5` |
+| Ring SVG         | size 72, stroke 6, `fill-none stroke-border-light` track + `fill-none stroke-accent transition-[stroke-dashoffset] duration-500` fill, `stroke-linecap="round"`, rotated -90deg |
+| Ring label       | `text-sm font-semibold text-text-primary tabular-nums` |
+| Side label (sm- ) | `text-xs font-medium text-text-secondary` |
+| Missing label    | `text-xs font-medium text-text-secondary` |
+| Missing tag      | `inline-flex items-center rounded-full bg-accent-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent` |
+| All-filled text  | `text-xs font-medium text-success-foreground` |
+
+**Pattern notes:**
+- Missing-field tags deliberately use the missing-skill token (`bg-accent-muted` / `text-accent`) even though the design text description reads "red". The accent-muted token is the closest "highlight that draws attention without violating the no-raw-color-classes rule" in `ui-tokens.md`.
+- Ring fill animates over 500ms when the percent changes — a single `transition-[stroke-dashoffset]` on the inner circle.
+- Ring is rendered as inline SVG (not div ring), so the percent label sits absolutely centered inside an `absolute inset-0` wrapper.
+
+### ResumeUpload — `components/profile/ResumeUpload.tsx`
+
+File: `components/profile/ResumeUpload.tsx`
+Last updated: 2026-08-01
+
+Standalone section card. Drag-and-drop upload area with hidden file input, "Select Resume" button below, and a "Generate Resume from Profile" CTA in a secondary tile. Buttons are disabled tooltips at this stage — real save and PDF generation land in Feature 06 / 08.
+
+| Property         | Class |
+| ---------------- | ----- |
+| Card             | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Heading          | `text-base font-semibold leading-6 text-text-primary` |
+| Subheading       | `mt-1 text-sm leading-5 text-text-secondary` |
+| Drop zone        | `mt-5 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed bg-surface-secondary px-6 py-10 text-center transition-colors` |
+| Drop zone idle   | `border-border-light hover:border-accent` |
+| Drop zone active | `border-accent bg-accent-muted` |
+| Dropzone icon    | `h-7 w-7 text-text-muted` (upload SVG, `stroke="currentColor"`, strokeWidth 1.5) |
+| Dropzone prompt  | `text-sm font-medium text-text-primary` |
+| Dropzone hint    | `text-xs text-text-muted` |
+| Filename chip    | `mt-1 inline-flex items-center rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent` |
+| Select button    | `inline-flex items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-on-dark transition-colors hover:bg-overlay` |
+| Secondary tile   | `mt-6 flex flex-col items-start justify-between gap-3 rounded-xl bg-surface-secondary p-4 sm:flex-row sm:items-center` |
+| Generate CTA     | `inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60` (disabled with title tooltipped at this stage) |
+
+**Pattern notes:**
+- The drag-and-drop label is a `<label>` wrapping a hidden `<input type="file">` — click anywhere in the zone opens the picker, drop events populate the filename chip only (no actual upload wiring at this stage).
+- `Generate Resume from Profile` uses the primary accent button — single CTA on the section, easy to read against the muted prompt background.
+- Tooltip copy on disabled buttons explicitly mentions the feature number (e.g. `"Generate Resume lands in Feature 08"`), so any reviewer sees the wiring gap and can find the corresponding build-plan entry.
+
+### ProfileForm — `components/profile/ProfileForm.tsx`
+
+File: `components/profile/ProfileForm.tsx`
+Last updated: 2026-08-01
+
+Single Client Component that owns all five profile sections. Internal sub-components `SectionCard`, `Field`, `TagInputField`, and `WorkRoleCard` keep the markup readable without splitting into multiple files.
+
+| Property         | Class |
+| ---------------- | ----- |
+| Form wrapper     | `flex flex-col gap-6` |
+| Section card     | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Section header   | `mb-5 flex items-start justify-between gap-4` |
+| Section title    | `text-base font-semibold leading-6 text-text-primary` |
+| Section subtitle | `mt-1 text-sm leading-5 text-text-secondary` |
+| Section body     | `flex flex-col gap-4` |
+| Field wrapper    | `flex flex-col gap-1.5` |
+| Field label      | `text-sm font-medium text-text-primary` |
+| Field hint       | `text-xs text-text-muted` |
+| Field "Optional" | `text-xs text-text-muted` (right-aligned label row) |
+| Input            | `block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent` |
+| Disabled input   | `${input} cursor-not-allowed bg-surface-secondary text-text-secondary` (used for the pre-filled email field) |
+| Tag chips        | `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-accent-muted text-accent` (skills) / `bg-info-lightest text-info-foreground` (industries) |
+| Tag remove button | `inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-black/10` |
+| Tag input row    | `flex items-center gap-2` — input + Add button (`border border-border bg-surface ... hover:bg-surface-secondary`) |
+| Role card        | `rounded-xl border border-border-light bg-surface-secondary p-4` |
+| Role index label | `text-xs font-semibold uppercase tracking-wide text-text-muted` |
+| Remove role link | `text-xs font-medium text-text-secondary hover:text-error` |
+| Save + Extract row | `flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between` — Extract secondary (`disabled`, tooltipped) + Save primary (`bg-accent ... text-accent-foreground ... disabled:opacity-60`, `sm:w-auto`) |
+| Date grid        | `grid grid-cols-1 gap-3 sm:grid-cols-2` |
+| Checkbox label   | `inline-flex items-center gap-2 text-sm text-text-primary` |
+| Checkbox control | `h-4 w-4 rounded border-border text-accent focus:ring-accent` |
+
+**Pattern notes:**
+- All five sections share the same `SectionCard` shell so the page reads as a stack of equivalent cards, matching the homepage card precedent.
+- Tag chips use the same `bg-accent-muted text-accent` token as the missing-field tags in `CompletionIndicator` — skills look like missing-fields when the list is empty. Industries use `bg-info-lightest text-info-foreground` to differentiate the optional field visually without adding a new color.
+- Work-role checkbox is bound to `current`. When `current` flips to `true`, `endDate` is cleared and the End Date input becomes `disabled` with `bg-surface-secondary text-text-muted`.
+- The Save and Extract buttons are intentionally disabled with tooltip text pointing at feature numbers (06, 07, 08). Users can fill the form freely; nothing happens on click yet.
+- Email field is `disabled` — server pre-fills it from `getCurrentUser()` in `app/profile/page.tsx`. This wires one of the open questions from memory (`ProfileForm` pre-fills email from session in 05).

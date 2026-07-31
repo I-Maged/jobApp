@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const redirectTo = new URL("/dashboard", request.url);
+  const redirectTo = new URL("/profile", request.url);
   const response = NextResponse.redirect(redirectTo);
 
   try {

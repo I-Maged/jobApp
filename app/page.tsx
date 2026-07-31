@@ -1,4 +1,3 @@
-import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Hero } from "@/components/homepage/Hero";
 import { FeatureSection1 } from "@/components/homepage/FeatureSection1";
@@ -9,7 +8,6 @@ import { BottomCTA } from "@/components/homepage/BottomCTA";
 export default function HomePage() {
   return (
     <>
-      <Navbar />
       <main className="flex-1">
         <Hero />
         <FeatureSection1 />

@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** 1 — Foundation
-**Last completed:** 04 Database Schema
-**Next:** 05 Profile Page — Full UI
+**Phase:** 2 — Profile Page
+**Last completed:** 05 Profile Page — Full UI
+**Next:** 06 Profile Save Logic
 
 ---
 
@@ -23,7 +23,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 2 — Profile Page
 
-- [ ] 05 Profile Page — Full UI
+- [x] 05 Profile Page — Full UI
 - [ ] 06 Profile Save Logic
 - [ ] 07 AI Profile Extraction from Resume
 - [ ] 08 Resume PDF Generation from Profile
@@ -49,6 +49,21 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 05 Profile Page — Full UI
+
+- **Single `ProfileForm.tsx` Client Component for all five sections** rather than per-section files. The form state lives in one place (`useState` hooks for each field) so cross-section validation, completion calculation, and the Save action in Feature 06 land in one spot. Internal sub-components (`SectionCard`, `Field`, `TagInputField`, `WorkRoleCard`) keep the JSX readable. Folder stays consistent with `AuthAwareCTAs` — multi-purpose Client Components are allowed when their internal state is shared.
+- **`CompletionIndicator` and `ResumeUpload` are separate components.** They have no shared state with the form — the banner can render before the form is even loaded. Keeping them independent lets Feature 06 swap the form over to a Server Action without touching the banner.
+- **Mock completion state at 70% with `PHONE`, `LOCATION`, `EDUCATION` flagged missing.** Matches the design text description. The completion calculation itself lands in Feature 06 alongside `is_complete` recomputation. Banner values are passed as props so the page can swap to real values with a one-line change.
+- **Missing-field tags use the project `bg-accent-muted text-accent` token, not red.** The design text description mentions red text, but the rule from `AGENTS.md` ("Never use hardcoded hex values or raw Tailwind color classes") applies — and there's no red token in the design system for this purpose. The closest "highlight that draws attention" pair is the missing-skill badge color, which is what the missing-field tag uses. Same chip shape as the matched/missing skill tags on the job details page.
+- **Email is pre-filled from the auth session in Feature 05**, resolving an open question from memory. `app/profile/page.tsx` calls `getCurrentUser()` server-side and passes the email down as a disabled prop. The disabled input uses `cursor-not-allowed bg-surface-secondary text-text-secondary` so users see it's locked.
+- **Work experience is locked to 3 roles with an `Add role` button.** A role card renders per index with a "Remove" link. The `currently working here` checkbox clears and disables the End Date input. Start/End Date use `type="month"` (resolved open question from memory).
+- **Tags stored in component state as `string[]`.** Feature 06 maps the chips to `skills` / `industries` `text[]` directly. Industries use `bg-info-lightest text-info-foreground` to visually distinguish the optional field from required skills — same chip shape, different color token. Both colors already exist in `@theme`.
+- **All Save / Extract / Generate buttons are intentionally disabled with tooltips pointing at future feature numbers.** The form fills freely; clicking anything shows `"Save Profile lands in Feature 06"` etc. so any reviewer / user immediately sees this is a read-only preview shell.
+- **`app/profile/page.tsx` is an async Server Component** that reads `getCurrentUser()` and passes `initialEmail` + `initialFullName` down. Three children render in order: banner card, `<ResumeUpload />`, `<ProfileForm />`. No DB writes this pass; no `revalidatePath` calls. `proxy.ts` auth gate handles the redirect-to-login case before this page ever renders.
+- **No `ResumePreview.tsx` rendered in 05.** Architecture lists it but it's a read-only preview of the saved resume — useless without a saved PDF (which arrives in Feature 06/08). Skipped intentionally; can be added later without disrupting the registry.
+- **Resume upload area is a `<label>` wrapping a hidden `<input type="file">`.** Click anywhere in the drop zone opens the picker. Drag-and-drop populates the on-page filename chip only — actual upload lands in Feature 06. The Generate Resume button lives in its own secondary tile below the drop zone rather than crowding the card.
+- **`ui-registry.md` updated with all three components plus their token classes.** Future profile / job-details / dashboard work can match this surface pattern. `Last updated: 2026-08-01` on each entry.
 
 ### 04 Database Schema
 
