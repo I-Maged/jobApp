@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 1 — Foundation
-**Last completed:** 02 Auth — InsForge Google + GitHub OAuth
-**Next:** 03 PostHog Initialization
+**Last completed:** 03 PostHog Initialization
+**Next:** 04 Database Schema
 
 ---
 
@@ -18,7 +18,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 01 Homepage
 - [x] 02 Auth
-- [ ] 03 PostHog Initialization
+- [x] 03 PostHog Initialization
 - [ ] 04 Database Schema
 
 ### Phase 2 — Profile Page
@@ -49,6 +49,17 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 03 PostHog
+
+- **Init lives in `instrumentation-client.ts`, not `lib/posthog-client.ts`.** Next.js 16's client-side initialization point runs once at app boot — the only correct place to call `posthog.init`. The two wrapper modules hold the capture/identify/reset helpers, not init logic.
+- **Browser wrappers (`lib/posthog-client.ts`) are SSR-safe.** `isReady()` returns false when `window` is undefined or `posthog-js` hasn't initialized — the wrappers no-op rather than throw inside Server Components. Each wrapper is independently try/catch'd so a PostHog failure never breaks the calling component.
+- **Server wrapper (`lib/posthog-server.ts`) owns the full lifecycle.** Creates a fresh `PostHog` instance per call with `flushAt: 1` and `flushInterval: 0`, then `await client.shutdown()` in the `finally` block — events are guaranteed flushed even if `capture()` throws. No long-lived server client.
+- **Only files that may import `posthog-js`/`posthog-node` directly are `instrumentation-client.ts`, `lib/posthog-client.ts`, and `lib/posthog-server.ts`.** Every other module goes through the project wrappers. Single migration surface.
+- **PostHog events table now lists 6 events** (not 4): 2 auth-tier utility events (`login_provider_selected`, `logout_requested`) added to the canonical 4 (`job_search_started`, `job_found`, `profile_completed`, `company_researched`). The "no new events without updating this table first" rule is preserved — this table is the single source of truth in `code-standards.md`.
+- **`NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` not `NEXT_PUBLIC_POSTHOG_KEY`.** The `.env.example`, `instrumentation-client.ts`, and `lib/posthog-server.ts` all read `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`. Older drafts of `code-standards.md` and `library-docs.md` referenced the wrong name — fixed in this pass so the env var row matches reality.
+- **Curl call sites already wired before this build pass:** `LoginButtons.tsx` was firing `posthog.capture("login_provider_selected", ...)` directly; `AuthAwareCTAs.tsx` was calling `posthog.identify(...)`, `posthog.reset()`, and `posthog.capture("logout_requested")`. Both components refactored to import from `@/lib/posthog-client` — behavior unchanged. No new emissions added in this build.
+- **Emission points for the 4 canonical events are still pending.** No `/find-jobs/SearchControls.tsx`, no `app/api/agent/find/route.ts`, no `actions/profile.ts`, no `app/api/agent/research/route.ts` exist yet. Wire-ups land in features 06, 10, 13.
 
 ### 02 Auth
 

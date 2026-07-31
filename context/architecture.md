@@ -104,8 +104,8 @@
 │   ├── browserbase.ts                     → Browserbase session creation + management
 │   ├── stagehand.ts                       → Stagehand initialisation with Browserbase session
 │   ├── adzuna.ts                          → Adzuna API client
-│   ├── posthog-client.ts                  → PostHog browser client
-│   ├── posthog-server.ts                  → PostHog server client
+│   ├── posthog-client.ts                  → PostHog browser wrappers (captureEvent, identifyUser, resetUser) — init lives in instrumentation-client.ts
+│   ├── posthog-server.ts                  → PostHog server wrapper (captureServerEvent) — creates + shuts down client per call
 │   └── utils.ts                           → Shared utility functions
 └── types/
     └── index.ts                           → Global TypeScript types

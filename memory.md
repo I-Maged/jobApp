@@ -1,119 +1,96 @@
-# Memory — Feature 02 Auth (complete; UI token system extended)
+# Memory — Feature 03 PostHog Initialization
 
 Last updated: 2026-07-31
 
 ## Status
 
-Feature 02 Auth is feature-complete at the code level — callback Route Handler, server-owned OAuth flow, hardened actions, proxy gate with cookie short-circuit, double-submit-protected login buttons. **Live end-to-end sign-in still requires InsForge dashboard `allowedRedirectUrls` to include `/callback`.**
+Feature 03 PostHog Initialization is complete at the code level. Browser init in `instrumentation-client.ts`, SSR-safe wrappers in `lib/posthog-client.ts`, server wrapper in `lib/posthog-server.ts`. The two existing auth-tier emissions (`login_provider_selected`, `logout_requested`) refactored to go through the new wrappers. Docs updated; events table in `code-standards.md` now lists all 6 events as the single source of truth.
 
-Two follow-on changes in this session: (a) post-review hardening of 5 high/medium issues; (b) addition of the `on-dark` design token and replacement of hardcoded `fill="#FFFFFF"` on icon paths with `currentColor`.
+The 4 canonical event emissions (`job_search_started`, `job_found`, `profile_completed`, `company_researched`) are intentionally not wired — their call sites (Find Jobs search controls, Adzuna agent route, profile save Server Action, company research route) don't exist yet. They will land in features 06, 10, 13 with one-line `captureEvent` / `captureServerEvent` calls.
 
-Next feature: **03 PostHog Initialization**.
+Next feature: **04 Database Schema** — `profiles`, `agent_runs`, `jobs`, `agent_logs` tables + `resumes` storage bucket.
 
 ## What was built (this session)
 
-### Phase A — callback fix (first half)
-- **Created** `app/(auth)/callback/route.ts` — GET Route Handler. Reads `insforge_code` query param + `insforge_pkce_verifier` cookie. Calls `createAuthActions({ baseUrl, anonKey, requestCookies: request.cookies, responseCookies: response.cookies })` → `auth.exchangeOAuthCode(code, verifier)`. Writes auth cookies onto `NextResponse.redirect('/dashboard')`. Deletes verifier cookie on success. On `!code || !verifier` or `error`, redirects to `/login?error=...`.
-- **Edited** `components/homepage/Hero.tsx:9` — headline `text-text-darkest` → `text-text-primary`.
+### Code
+- **`lib/posthog-client.ts`** — created. Exports `captureEvent(name, props)`, `identifyUser(userId, traits)`, `resetUser()`. SSR-safe (`isReady()` guards `typeof window !== "undefined"` + `posthog.capture` is a function). Each wrapper independently try/catch'd so a PostHog failure never breaks the calling component. No init logic — init lives in `instrumentation-client.ts` per Next.js 16 convention.
+- **`lib/posthog-server.ts`** — created. Exports `captureServerEvent(userId, event, properties)`. Creates a fresh `PostHog` instance per call with `flushAt: 1` and `flushInterval: 0`, calls `await client.shutdown()` in the `finally` block. Guards missing env vars with a dev-only `console.warn` and silent no-op in production.
+- **`components/auth/LoginButtons.tsx`** — refactored: replaced `posthog.capture("login_provider_selected", { provider })` with `captureEvent("login_provider_selected", { provider })`. Removed `import posthog from "posthog-js"`.
+- **`components/auth/AuthAwareCTAs.tsx`** — refactored: replaced `posthog.identify(...)`, `posthog.reset()`, `posthog.capture("logout_requested")` with `identifyUser(...)`, `resetUser()`, `captureEvent("logout_requested", {})`. Removed `import posthog from "posthog-js"`. Behavior unchanged.
+- **`package.json`** — added `posthog-node@^5.47.2`. `posthog-js ^1.409.5` was already present.
 
-### Phase B — post-review hardening (second half)
-- **`actions/auth.ts:31`** — `signInWithProvider` bails to `/login?error=signin` if `data.codeVerifier` is empty (was silently setting an empty cookie and bouncing through the provider round-trip).
-- **`actions/auth.ts:63`** — `checkSessionAction` now delegates to `createInsforgeServer()` (single client-construction path). Errors logged via `console.warn` instead of silently swallowed. Removed unused `createServerClient` import.
-- **`components/auth/LoginButtons.tsx`** — rewritten as a `"use client"` component. Each `SubmitButton` reads `useFormStatus().pending` from inside its own `<form>` to disable itself and swap its label to "Redirecting…" while in flight. Prevents Google↔GitHub double-submit races.
-- **`components/auth/AuthButton.tsx`** — deleted (was a server component called with `disabled={false}`; no longer referenced).
-- **`components/homepage/BottomCTA.tsx:8`** — headline `text-text-darkest` → `text-text-primary` (consistency with Hero).
-- **`proxy.ts`** — short-circuits on cookie presence: checks `request.cookies.get("insforge_access_token")` first; missing → `/login` without calling `getCurrentUser()` (no InsForge round-trip for obviously-anonymous requests).
-- **`context/architecture.md`** — folder tree updated (AuthButton removed).
-- **`context/ui-registry.md`** — `AuthButton` entry deleted; `LoginButtons` entry updated to table form with `useFormStatus` pattern, icon path notes, and pending-label convention (`"Redirecting…"` Unicode ellipsis).
-- **`context/progress-tracker.md`** — new decisions appended (cookie short-circuit, verifier guard, checkSessionAction dedupe, LoginButtons `useFormStatus`).
+### Docs
+- **`context/code-standards.md`** — PostHog Events table now lists all 6 events with file references (4 canonical + 2 auth-tier). Env var row fixed: `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` (was stale `NEXT_PUBLIC_POSTHOG_KEY`).
+- **`context/library-docs.md`** — PostHog section rewritten: documents `lib/posthog-client.ts` / `lib/posthog-server.ts` as the project entry points, with raw `posthog-js` / `posthog-node` patterns shown only as reference. Rules tightened: "Always use the project wrappers — never import posthog-js or posthog-node directly in components, actions, or API routes". Env var names corrected.
+- **`context/architecture.md`** — `posthog-client.ts` / `posthog-server.ts` descriptions updated to reflect the wrapper role (init lives in `instrumentation-client.ts`).
+- **`context/build-plan.md`** — Feature 03 description updated: init lives in `instrumentation-client.ts`, wrappers are SSR-safe / lifecycle-owning.
+- **`context/progress-tracker.md`** — Feature 03 marked complete. New "Decisions Made" section with 7 decisions.
 
-### Phase C — UI token system (`/imprint` follow-through)
-- **`app/globals.css:30`** — added `--color-on-dark: #ffffff`. Generates Tailwind v4 utility `text-on-dark`.
-- **`components/auth/LoginButtons.tsx:46,64`** — SVG paths switched from `fill="#FFFFFF"` to `fill="currentColor"`. The button parent class already includes `text-on-dark`, so the icon path inherits white via `currentColor`.
-- **`context/ui-tokens.md`** — `on-dark` token documented in (1) the `@theme` mirror block, (2) a new "Text on Dark Surfaces" usage table with explicit "not interchangeable with `accent-foreground`" rationale.
-- **`context/ui-registry.md`** — LoginButtons entry: `text-on-dark` (not `text-accent-foreground`), `fill="currentColor"`. The previously flagged hardcoded-hex inconsistency is resolved and the warning removed.
-
-### Verified clean after each phase
-`npx tsc --noEmit`, `npm run lint`, `rm -rf .next && npm run build` — all pass. Build output: `ƒ /callback`, `ƒ Proxy (Middleware)`. Compiled HTML shows `text-on-dark` reaching the rendered button class.
+### Verification
+- `npm run lint` — clean
+- `npx tsc --noEmit` — clean
+- `npm run build` — clean. Build output: `○ /`, `○ /_not-found`, `ƒ /callback`, `○ /login`, `ƒ Proxy (Middleware)` (no change from prior session)
 
 ## What was already in place (kept from prior sessions)
 
-Files (correct as-is):
-- `lib/insforge-client.ts` — `createInsforgeBrowser()` factory using `createClient` from `@insforge/sdk`
-- `lib/insforge-server.ts` — `createInsforgeServer()` factory using `createServerClient` from `@insforge/sdk/ssr`
-- `lib/get-current-user.ts` — session read helper
-- `proxy.ts` — Next.js 16 auth gate
-- `app/(auth)/layout.tsx` — auth shell (logo + centered card on `bg-accent-muted`)
-- `app/(auth)/login/page.tsx` — login page with `<LoginButtons />`
-- `components/auth/LoginButtons.tsx` — client component, `useFormStatus`, `text-on-dark`, `currentColor` icons
-- `components/auth/AuthAwareCTAs.tsx` — three variants (`hero`, `bottom`, `navbar`), reads session via `checkSessionAction()` on mount, Sign Out via `<form action={signOutAction}>`
-- `actions/auth.ts` — `signInWithProvider` (with verifier guard), `signOutAction`, `checkSessionAction` (delegates to `createInsforgeServer`)
-
-`app/(auth)/callback/page.tsx` was deleted in a prior session. `components/auth/AuthButton.tsx` was deleted this session.
+- `instrumentation-client.ts` — Next.js 16 client init. Reads `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` and `NEXT_PUBLIC_POSTHOG_HOST`. Guards missing vars (dev-only `console.error`). `posthog.init(token, { api_host, capture_exceptions: true, debug: NODE_ENV === "development" })`.
+- `.env.example` — documents both public env keys
+- `.env` — real values for both keys (set prior, not re-verified this session)
+- `components/auth/LoginButtons.tsx` — client component with `useFormStatus`, `text-on-dark`, `currentColor` icons
+- `components/auth/AuthAwareCTAs.tsx` — three variants, reads session via `checkSessionAction()`, `identifyUser` after resolve, `captureEvent`+`resetUser` before sign-out
+- `actions/auth.ts` — `signInWithProvider` (with verifier guard), `signOutAction`, `checkSessionAction`
 
 ## Decisions made (still valid)
 
-- **OAuth flow is server-owned via `createAuthActions` from `@insforge/sdk/ssr`.** Browser client holds session in memory only and writes only the CSRF cookie; never the auth cookies. `proxy.ts` reads `insforge_access_token` / `insforge_refresh_token` via `createServerClient`.
-- **PKCE verifier in httpOnly cookie** `insforge_pkce_verifier`, 10-min maxAge. Set in `signInWithProvider` (with empty-string guard), consumed in `/callback/route.ts`, deleted after exchange.
-- **Login buttons use `<form action={serverAction}>`** not `onClick`. `SubmitButton` reads `useFormStatus` for per-button pending state.
-- **`signOutAction()` uses `createAuthActions().signOut()`** which clears auth cookies via `clearAuthCookies`.
-- **Next.js 16: `middleware.ts` → `proxy.ts`** at project root. Function name `proxy`, default Node.js runtime.
-- **Login page matches marketing-site visual style** — centered card on `bg-accent-muted`, brand logo above, no marketing nav/footer.
-- **Auth-gate redirects to `/login` only** — no `?next=` round-trip.
-- **OAuth callback at `app/(auth)/callback/route.ts`** (GET Route Handler), NOT a page. Next.js 16 only permits cookie mutation in Server Actions and Route Handlers — Server Components cannot mutate cookies. SDK accepts `{ requestCookies, responseCookies }` for Route Handlers.
-- **OAuth provider callback param name is `insforge_code`** (not `code`). Verified in `node_modules/@insforge/sdk/dist/ssr.mjs:1030`.
-- **`proxy.ts` short-circuits on cookie presence** before calling `getCurrentUser()`.
-- **Single client-construction path for `createInsforgeServer`** — `checkSessionAction` delegates; no duplicate `createServerClient({...})` blocks in app code.
-- **`on-dark` design token** for any foreground (text, icon, divider) on a dark filled surface. NOT interchangeable with `accent-foreground` (different semantics: accent button text vs any-dark-surface text). SVG icons render white via `fill="currentColor"` + parent `text-on-dark`.
+- **Init lives in `instrumentation-client.ts`, not `lib/posthog-client.ts`.** Next.js 16's client-side initialization point runs once at app boot — the only correct place to call `posthog.init`. The two wrappers hold capture/identify/reset helpers, not init.
+- **Browser wrappers are SSR-safe.** `isReady()` returns false on server or before init — wrappers no-op rather than throw. Each wrapper independently try/catch'd.
+- **Server wrapper owns the full lifecycle.** Fresh `PostHog` per call, `flushAt: 1`, `flushInterval: 0`, `await client.shutdown()` in `finally`. No long-lived server client — Next.js functions are short-lived, long-lived clients risk dropped events on cold shutdown.
+- **Only three files may import `posthog-js`/`posthog-node` directly: `instrumentation-client.ts`, `lib/posthog-client.ts`, `lib/posthog-server.ts`.** Every other module goes through the wrappers. Single migration surface.
+- **PostHog events table is the single source of truth.** 6 events total. The "no new events without updating this table first" rule preserved. Auth-tier events explicitly listed but flagged as not powering dashboard charts.
+- **Env var name is `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`** (matches `.env.example`, `instrumentation-client.ts`, `lib/posthog-server.ts`). The stale `NEXT_PUBLIC_POSTHOG_KEY` references in `code-standards.md` / `library-docs.md` were a real bug — fixed this session.
 
 ## Problems solved
 
-- **Bug 1 (Session 1):** callback as Server Component reading session — stuck on "Signing you in…" because no cookies yet. Fixed by moving to Client Component.
-- **Bug 2 (Session 1):** callback as Client Component — browser SDK exchanged in memory but server had no cookies; `proxy.ts` always saw "no user". Architecture fix: server-owned OAuth via `createAuthActions`.
-- **Bug 3 (Session 2):** callback as Server Component calling `exchangeOAuthCode` — Next.js 16 runtime error: "Cookies can only be modified in a Server Action or Route Handler." Resolved by converting `page.tsx` → `route.ts` (GET Route Handler).
-- **Review fix (this session):** `data.codeVerifier` empty-string would silently set empty cookie and bounce — now explicitly guarded.
-- **Review fix (this session):** `BottomCTA` headline used `text-text-darkest` while `Hero` used `text-text-primary` — both now `text-text-primary`.
-- **Review fix (this session):** Google/GitHub double-submit race — `LoginButtons` is now a client component using `useFormStatus`.
-- **Review fix (this session):** `checkSessionAction` duplicated `createServerClient({...})` construction — now delegates to `createInsforgeServer()`, errors logged via `console.warn`.
-- **Review fix (this session):** `proxy.ts` always hit InsForge even for anonymous requests — now short-circuits on cookie presence.
-- **UI consistency (this session):** SVG icons hardcoded `fill="#FFFFFF"` — replaced with `fill="currentColor"` + parent `text-on-dark` token. New `--color-on-dark` token added to `app/globals.css` and documented in `context/ui-tokens.md`.
-- **Cache stale reference to deleted `page.tsx`** — first `npx tsc --noEmit` after deleting `page.tsx` complained about `.next/dev/types/validator.ts`; resolved by `rm -rf .next`. Not a code issue.
+- **No code bugs surfaced this session.** All clean: lint, typecheck, build, and behavioral preservation of the two pre-existing emissions.
+- **Env var drift between code and docs.** `code-standards.md` env var table and `library-docs.md` both referenced `NEXT_PUBLIC_POSTHOG_KEY`, but `.env.example`, `instrumentation-client.ts`, and the new `lib/posthog-server.ts` all use `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`. Doc references corrected in this pass. The codebase was already consistent — only the docs were stale.
+- **postHog-js `capture` `posthog-js` returns `CaptureResult | undefined` for the overload that takes an EventName.** The browser wrapper accepts `string` event names (slightly looser than the typed overload) so it works for both the shorthand `captureEvent("name")` and `captureEvent("name", props)`. Internally caught in try/catch.
+- **posthog-node v5 type drift.** `client.d.ts` line 676 declares `shutdown(): void`, but the actual implementation in `client.js` awaits `super._shutdown()` so it's an async void. Calling convention `await client.shutdown()` is what works in practice — `library-docs.md` already shows this pattern, and the wrapper matches.
 
 ## Current state
 
-Build-time verified (re-verified after each of three phases this session):
-- `npm run build` succeeds, `npx tsc --noEmit` passes, `npm run lint` passes
-- Build route table: `○ /`, `○ /_not-found`, `ƒ /callback`, `○ /login`, `ƒ Proxy (Middleware)`
-- Compiled HTML for `/login` confirms `text-on-dark` and `fill="currentColor"` reach the DOM
+Working:
+- PostHog init boots the browser session once per app load
+- `captureEvent`, `identifyUser`, `resetUser` work from Client Components
+- `captureServerEvent` works from Server Actions and Route Handlers (no real call sites yet, but wrapper verified by build)
+- Two auth events already fire through the wrappers: `login_provider_selected` (LoginButtons), `logout_requested` + identify/reset (AuthAwareCTAs)
+- Lint, typecheck, build all clean
 
-Runtime (expected, not live-verified):
-- `signInWithProvider`, `signOutAction`, `checkSessionAction`, `/callback`, `proxy.ts` gate, double-submit protection, cookie short-circuit, verifier guard, icon token inheritance
-
-Resolved this session:
-- Hero headline color → `text-text-primary`
-- BottomCTA background → `bg-accent-muted`
-- BottomCTA headline color → `text-text-primary`
-- OAuth icon fill → token-based via `text-on-dark` + `currentColor`
-
-Not started:
-- 03 PostHog Initialization
-- 04 Database Schema
-- All of Phase 2-5
+Not done (deliberately deferred):
+- Wire-up of `job_search_started`, `job_found`, `profile_completed`, `company_researched` — call sites don't exist yet, they ship with features 06 / 10 / 13
+- Live verification that events arrive in PostHog — no browser session exercised this session
+- `posthog-setup-report.md` followup items ("Runtime delivery and attribution remain unresolved") — still valid, untouched
 
 ## Next session starts with
 
-**Phase 1 — closeout and next feature.**
+**Feature 04 Database Schema.**
 
-Concrete steps:
-1. Confirm with the user that `/callback` is in `allowedRedirectUrls` on the InsForge dashboard (both `http://localhost:3000/callback` and production URL).
-2. Run `npm run dev`. Smoke-test sign-in end-to-end: button shows "Redirecting…" then submits → provider → `/callback` → `/dashboard`. Confirm auth cookies in DevTools. Confirm `proxy.ts` lets request through. Sign Out clears cookies and redirects to `/`.
-3. Mark Feature 02 done in `context/progress-tracker.md`.
-4. Begin **Feature 03 PostHog Initialization**.
+Before implementing:
+1. Read `context/build-plan.md` Feature 04 block.
+2. Confirm exact column types / nullability with the user if any field feels ambiguous (already in `architecture.md` but worth re-checking against the InsForge Postgres reality — e.g. `text[]` arrays, `jsonb` for `work_experience` / `education` / `company_research`).
+3. Pick an RLS strategy — InsForge convention or project-specific. The plan says "Always filter by `user_id`" so RLS is the database-side enforcement, not just a code convention.
 
-Before starting Feature 03, read `context/build-plan.md` (already required by AGENTS.md) for the exact PostHog scope. Per AGENTS.md also load the PostHog skill from `node_modules/` (if available) and check `context/library-docs.md` for project-specific rules.
+Implementation order to minimize churn:
+1. Create tables in dependency order — `profiles` first (no FKs to project tables), then `agent_runs`, `jobs` (FK to `agent_runs`), `agent_logs` (FK to `agent_runs`). FK direction matters for InsForge PostgREST projection.
+2. Create `resumes` storage bucket. Confirm path scheme: `resumes/{user_id}/resume.pdf`.
+3. Add RLS policies on all 4 tables — owner-only read/write keyed on `auth.uid()` matching `user_id`.
+4. Update `lib/insforge-server.ts` — no schema-side changes needed since the SDK treats `user_id` as a regular column.
+5. Update `context/progress-tracker.md` with schema decisions.
+
+After schema lands, the project is ready for **Phase 2 — Profile Page** (Feature 05 UI, 06 save logic).
 
 ## Open questions
 
-- **InsForge dashboard `allowedRedirectUrls`** — must include `/callback` for both `http://localhost:3000/callback` and the production URL. Cannot be verified from this environment.
-- **Model is image-blind** — any future design reference must be transcribed as text. Two prior design references (homepage, jobs list) were delivered as text breakdowns rather than images.
-- **AuthAwareCTAs hoist-to-context (deferred review item):** the three instances each call `checkSessionAction` independently on mount, and the navbar can show stale state after a server-action redirect. Lift session into a server-rendered `initialSignedIn` prop or shared context only if/when this becomes visible. Not blocking Feature 02 closeout.
+- **RLS policy syntax for InsForge.** No InsForge skill is documented in `library-docs.md` (the file has sections for every other third party). Auth/middleware examples reference the SSR client but not policy authoring. May need to read InsForge docs or example policies to confirm the exact `auth.uid()` predicate form. Worth a quick `insforge_fetch-docs "instructions"` lookup at session start.
+- **`work_experience` and `education` as `jsonb`** — the schema uses `jsonb` for these arrays-of-objects. The InsForge SDK surfaces `jsonb` as `unknown` unless typed. Worth deciding once how typed casts happen — fetch + cast in a wrapper, or trust + assert at call sites.
+- **Whether `company_research` (jsonb on `jobs`) gets any RLS special-case.** Currently it's a column on a table that already has user-scoped RLS, so reading jobs implicitly gates research access. No issue expected, but it's the most complex jsonb shape in the schema — may want to validate the dossier JSON shape at insert time.
+- **`posthog-setup-report.md` followup items still open.** "Runtime delivery and attribution remain unresolved" and "Server-side attribution remains unresolved". Out of scope for this session (still relevant after Feature 04 — revisit whenever the first real PostHog dashboard query is needed).

@@ -224,14 +224,18 @@ const insforge = await createInsforgeServer();
 
 All PostHog events must use these exact event names. Never invent new event names without adding them here first.
 
-| Event                | When                                       | Key Properties             |
-| -------------------- | ------------------------------------------ | -------------------------- |
-| `job_search_started` | Find Jobs button clicked                   | userId, jobTitle, location |
-| `job_found`          | Each job discovered and saved              | userId, source, matchScore |
-| `profile_completed`  | User saves complete profile for first time | userId                     |
-| `company_researched` | Company research dossier generated         | userId, jobId, company     |
+| Event                    | When                                       | Properties                     | File                                          |
+| ------------------------ | ------------------------------------------ | ------------------------------ | --------------------------------------------- |
+| `login_provider_selected` | OAuth provider button clicked              | `provider`                     | `components/auth/LoginButtons.tsx`            |
+| `logout_requested`        | Sign Out submitted                         | —                              | `components/auth/AuthAwareCTAs.tsx`           |
+| `job_search_started`      | Find Jobs button clicked                   | `userId`, `jobTitle`, `location` | `components/find-jobs/SearchControls.tsx`    |
+| `job_found`               | Each job discovered and saved              | `userId`, `source`, `matchScore` | `app/api/agent/find/route.ts`               |
+| `profile_completed`       | User saves complete profile for first time | `userId`                       | `actions/profile.ts`                          |
+| `company_researched`      | Company research dossier generated         | `userId`, `jobId`, `company`   | `app/api/agent/research/route.ts`             |
 
-These four events are the only events in this project. Do not add more without updating this list first.
+These six events are the only events in this project. Do not add more without updating this table first.
+
+The two `login_provider_selected` and `logout_requested` rows are auth-tier utility events used to track sign-in starts and sign-out activity. They are not used in dashboard charts. Always fire them with correct properties.
 
 `job_found` powers the Jobs Found Over Time and Match Score Distribution dashboard charts.
 `company_researched` powers the Company Research Activity dashboard chart.
@@ -252,8 +256,8 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `OPENAI_API_KEY`                | agent/ functions       |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
-| `NEXT_PUBLIC_POSTHOG_KEY`       | lib/posthog-client.ts  |
-| `NEXT_PUBLIC_POSTHOG_HOST`      | lib/posthog-client.ts  |
+| `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` | `instrumentation-client.ts`, `lib/posthog-server.ts` |
+| `NEXT_PUBLIC_POSTHOG_HOST`      | `instrumentation-client.ts`, `lib/posthog-server.ts` |
 
 `NEXT_PUBLIC_` prefix means the variable is exposed to the browser. Never add `NEXT_PUBLIC_` to secret keys.
 

@@ -547,60 +547,98 @@ const result = JSON.parse(response.choices[0].message.content!);
 
 **Check first:** Check AGENTS.md for an installed PostHog skill. If a PostHog MCP server is configured — use it. The skill/MCP will have the latest client and server patterns.
 
-### Client Setup (Browser)
+### Init (Browser)
+
+Initialization lives in `instrumentation-client.ts` — Next.js 16's client-side initialization point, runs once at app boot.
 
 ```typescript
-// lib/posthog-client.ts
-import posthog from "posthog-js";
-
-export function initPostHog() {
-  if (typeof window !== "undefined") {
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
-      capture_pageview: false, // manual pageview tracking
-    });
-  }
+if (token && host) {
+  posthog.init(token, {
+    api_host: host,
+    capture_exceptions: true,
+    debug: process.env.NODE_ENV === "development",
+  });
 }
+```
 
-// Capture event client-side
-posthog.capture("job_found", {
+### Client Wrapper — `lib/posthog-client.ts`
+
+All Client Components import from `@/lib/posthog-client`. Never import `posthog-js` directly in components — go through the wrappers so we have a single migration surface.
+
+```typescript
+import { captureEvent, identifyUser, resetUser } from "@/lib/posthog-client";
+
+captureEvent("job_found", { userId, source: "search", matchScore: score });
+identifyUser(user.id, { email: user.email, name: user.name });
+resetUser();
+```
+
+All three wrappers are SSR-safe — they no-op when `window` is undefined or `posthog-js` hasn't initialized. Each one wraps the underlying call in try/catch so a PostHog failure never breaks the component.
+
+### Server Wrapper — `lib/posthog-server.ts`
+
+All Server Actions and Route Handlers import from `@/lib/posthog-server`. The wrapper owns the full lifecycle: creates a fresh `PostHog` client per call, flushes immediately, and always calls `await shutdown()` before returning. Never create your own `PostHog` instance — always go through the wrapper.
+
+```typescript
+import { captureServerEvent } from "@/lib/posthog-server";
+
+await captureServerEvent(userId, "company_researched", {
   userId,
-  source: "search",
-  matchScore: score,
+  jobId,
+  company,
 });
 ```
 
-### Server Setup
+Internals — for reference only:
 
 ```typescript
-// lib/posthog-server.ts
+import { PostHog } from "posthog-node";
+
+const client = new PostHog(apiKey, {
+  host,
+  flushAt: 1, // send immediately
+  flushInterval: 0, // no batching — Next.js functions are short-lived
+});
+
+client.capture({ distinctId: userId, event, properties });
+await client.shutdown(); // required — ensures event is sent
+```
+
+### Underlying SDK Setup (for reference)
+
+The raw browser client pattern — only used inside `instrumentation-client.ts`:
+
+```typescript
+import posthog from "posthog-js";
+
+posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
+  api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
+});
+```
+
+The raw server client pattern — only used inside `lib/posthog-server.ts`:
+
+```typescript
 import { PostHog } from "posthog-node";
 
 export const createPostHogServer = () =>
-  new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+  new PostHog(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
     host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
-    flushAt: 1, // send immediately
-    flushInterval: 0, // no batching — Next.js functions are short-lived
+    flushAt: 1,
+    flushInterval: 0,
   });
-
-// Always use and shutdown in the same function
-const posthog = createPostHogServer();
-posthog.capture({
-  distinctId: userId,
-  event: "company_researched",
-  properties: { userId, jobId, company },
-});
-await posthog.shutdown(); // required — ensures event is sent
 ```
 
 **Rules:**
 
-- Always call `await posthog.shutdown()` in server-side functions — events are lost without it
+- Always use the project wrappers (`@/lib/posthog-client` and `@/lib/posthog-server`) — never import `posthog-js` or `posthog-node` directly in components, actions, or API routes
+- `captureServerEvent` always creates + shuts down within the same function call — never hold a long-lived `PostHog` server instance
 - `flushAt: 1` and `flushInterval: 0` always set on server client
-- Event names must match exactly the list in `code-standards.md`
-- Always include `userId` as a property on every server-side event
-- Call `posthog.identify(userId)` after login on client side
-- Call `posthog.reset()` on logout on client side
+- Event names must match exactly the table in `code-standards.md`
+- Always pass `userId` as a distinct ID (`captureServerEvent` first arg) and as a property on every server-side event
+- Call `identifyUser(userId)` after login on client side
+- Call `resetUser()` on logout on client side
+- Server wrapper safely no-ops when env vars are missing (logs a dev-only warning)
 
 ---
 

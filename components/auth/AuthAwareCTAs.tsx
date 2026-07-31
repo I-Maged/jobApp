@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  captureEvent,
+  identifyUser,
+  resetUser,
+} from "@/lib/posthog-client";
 import { checkSessionAction, signOutAction } from "@/actions/auth";
 
 type Variant = "hero" | "bottom" | "navbar";
@@ -18,10 +23,18 @@ export function AuthAwareCTAs({ variant }: Props) {
     let cancelled = false;
     checkSessionAction()
       .then((res) => {
-        if (!cancelled) {
-          setSignedIn(res.signedIn);
-          setReady(true);
+        if (cancelled) {
+          return;
         }
+
+        setSignedIn(res.signedIn);
+        if (res.signedIn) {
+          identifyUser(res.user.id, {
+            email: res.user.email,
+            name: res.user.name,
+          });
+        }
+        setReady(true);
       })
       .catch(() => {
         if (!cancelled) {
@@ -44,7 +57,13 @@ export function AuthAwareCTAs({ variant }: Props) {
     }
     if (signedIn) {
       return (
-        <form action={signOutAction}>
+        <form
+          action={async () => {
+            captureEvent("logout_requested");
+            resetUser();
+            await signOutAction();
+          }}
+        >
           <button
             type="submit"
             className="inline-flex items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-overlay"

@@ -61,11 +61,27 @@ export async function signOutAction() {
   redirect("/");
 }
 
-export async function checkSessionAction(): Promise<{ signedIn: boolean }> {
+export async function checkSessionAction(): Promise<
+  | { signedIn: true; user: { id: string; email: string; name?: string } }
+  | { signedIn: false }
+> {
   try {
     const insforge = await createInsforgeServer();
     const { data } = await insforge.auth.getCurrentUser();
-    return { signedIn: !!data?.user };
+    const user = data?.user;
+
+    if (!user) {
+      return { signedIn: false };
+    }
+
+    return {
+      signedIn: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.profile?.name,
+      },
+    };
   } catch (error) {
     console.warn("[actions/auth] checkSessionAction", error);
     return { signedIn: false };

@@ -1,22 +1,30 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
+import { captureEvent } from "@/lib/posthog-client";
 import { signInWithProvider } from "@/actions/auth";
 
+type Provider = "google" | "github";
+
 export function LoginButtons() {
+  const handleSignIn = (provider: Provider) => {
+    captureEvent("login_provider_selected", { provider });
+    return signInWithProvider(provider);
+  };
+
   return (
     <div className="flex flex-col gap-3">
-      <form action={signInWithProvider.bind(null, "google")}>
+      <form action={handleSignIn.bind(null, "google")}>
         <SubmitButton provider="google" />
       </form>
-      <form action={signInWithProvider.bind(null, "github")}>
+      <form action={handleSignIn.bind(null, "github")}>
         <SubmitButton provider="github" />
       </form>
     </div>
   );
 }
 
-function SubmitButton({ provider }: { provider: "google" | "github" }) {
+function SubmitButton({ provider }: { provider: Provider }) {
   const { pending } = useFormStatus();
   const label = provider === "google" ? "Continue with Google" : "Continue with GitHub";
 

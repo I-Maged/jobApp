@@ -55,11 +55,12 @@ Set up PostHog before any events fire. Must be done before any agent features.
 
 **Logic:**
 
-- Create lib/posthog-client.ts — PostHog browser client, initialized with NEXT_PUBLIC_POSTHOG_KEY and NEXT_PUBLIC_POSTHOG_HOST
-- Create lib/posthog-server.ts — PostHog server client with flushAt: 1 and flushInterval: 0
-- Initialize PostHog in root app layout — wraps entire app
-- posthog.identify() called after successful login with user ID
-- posthog.reset() called on logout
+- Initialize PostHog in `instrumentation-client.ts` (Next.js 16's client init point) with NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN and NEXT_PUBLIC_POSTHOG_HOST, capture_exceptions: true
+- Create `lib/posthog-client.ts` — SSR-safe wrappers `captureEvent`, `identifyUser`, `resetUser`. Init logic stays in `instrumentation-client.ts`.
+- Create `lib/posthog-server.ts` — `captureServerEvent(userId, event, properties)` creates a fresh `PostHog` client per call with `flushAt: 1` and `flushInterval: 0`, calls `await shutdown()` before returning
+- `identifyUser()` called after successful login with user ID
+- `resetUser()` called on logout
+- No raw `posthog-js` or `posthog-node` imports outside `instrumentation-client.ts` and the two wrappers
 
 ---
 
