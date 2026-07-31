@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 1 — Foundation
-**Last completed:** 01 Homepage (UI)
-**Next:** 02 Auth — InsForge Google + GitHub OAuth
+**Last completed:** 02 Auth — InsForge Google + GitHub OAuth
+**Next:** 03 PostHog Initialization
 
 ---
 
@@ -17,7 +17,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 1 — Foundation
 
 - [x] 01 Homepage
-- [ ] 02 Auth
+- [x] 02 Auth
 - [ ] 03 PostHog Initialization
 - [ ] 04 Database Schema
 
@@ -49,6 +49,29 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 02 Auth
+
+- **OAuth flow is server-owned via `createAuthActions` from `@insforge/sdk/ssr`.** The browser client holds the auth session in memory only (the SDK's `TokenManager` is explicitly "Memory-only token storage") and only writes the CSRF cookie. Server-side `getCurrentUser()` reads `insforge_access_token` / `insforge_refresh_token` cookies — those never get written by the browser client. Fix: the entire OAuth flow runs on the server. Login buttons submit a Server Action that calls `createAuthActions().signInWithOAuth()`, stashes the returned `codeVerifier` in a short-lived cookie, then redirects the browser to the provider. The `/callback` Server Component reads `insforge_code` from the URL and the verifier from the cookie, calls `createAuthActions().exchangeOAuthCode(code, codeVerifier)` (which writes the auth cookies), then redirects to `/dashboard`.
+- **Server Action `signInWithProvider(provider)`** in `actions/auth.ts` — uses `createAuthActions` from `@insforge/sdk/ssr`. Called from `<form action={signInWithProvider.bind(null, 'google')}>` in `LoginButtons.tsx`.
+- **Server Action `signOutAction()`** — uses `createAuthActions().signOut()`. Called from a `<form>` in `AuthAwareCTAs` (Sign Out button).
+- **Server Action `checkSessionAction()`** — used by `AuthAwareCTAs` to read the session state on the client (calls `createServerClient().auth.getCurrentUser()` server-side).
+- **PKCE verifier cookie** named `insforge_pkce_verifier`, httpOnly, 10 minute maxAge. Set in `signInWithProvider`, read in `/callback`, deleted after the exchange.
+- **`proxy.ts` not `middleware.ts`.** Next.js 16 renamed `middleware` to `proxy` (function name `proxy`, default Node.js runtime). Confirmed in `node_modules/next/dist/docs/.../proxy.md`. The build output shows `Proxy (Middleware)` under the routes.
+- **Login pages live in `app/(auth)/` route group** with a dedicated layout (logo + centered card, no marketing nav/footer). Matches the marketing-site visual style per design direction.
+- **Auth-gate redirects to `/login` only — no `next` round-trip.** Per user direction. Simpler redirect path.
+- **Nav `variant` prop removed.** The "landing" vs "app" CTA distinction was redundant once `AuthAwareCTAs` checks session state itself. Same for the Hero/BottomCTA wiring.
+- **OAuth callback lives at `app/(auth)/callback/route.ts`** (GET Route Handler), not a page. Next.js 16 forbids cookie mutation in Server Components — Server Actions and Route Handlers are the only allowed sites. The SDK's `createAuthActions` accepts `{ requestCookies, responseCookies }` for Route Handlers.
+- **OAuth provider callback param name is `insforge_code`** (not `code`) — verified in `node_modules/@insforge/sdk/dist/ssr.mjs:1030`.
+- **`proxy.ts` short-circuits on cookie presence**: checks `request.cookies.get("insforge_access_token")` first; if missing, redirects to `/login` without calling `getCurrentUser()` (no InsForge round-trip for obviously-anonymous requests).
+- **`signInWithProvider` guards missing PKCE verifier**: redirects to `/login?error=signin` if `data.codeVerifier` is empty, instead of setting an empty cookie and bouncing through the provider round-trip.
+- **`checkSessionAction` delegates to `createInsforgeServer()`** — single client construction path. Errors logged via `console.warn` so they're not silently conflated with "signed out".
+- **`LoginButtons` uses `useFormStatus`** — each button disables itself and shows "Redirecting…" while its form is pending, preventing double-submit races between Google and GitHub.
+- **`/callback` is the post-OAuth redirect target**. The InsForge SDK requires the URL to be in `allowedRedirectUrls` on the InsForge dashboard — to be confirmed by the user before going live.
+- **Three bugs found and fixed during this build:**
+  1. **First attempt (callback as Server Component):** got cookies from server, but no cookies had been written yet, so the page stuck on "Signing you in…". Fixed by converting to Client Component (browser SDK exchanges the code).
+  2. **Second attempt (callback as Client Component):** the browser SDK did the exchange and the user object was available in browser memory, but the server had no cookies. `proxy.ts` still saw "no user" and redirected to `/login`. The "Open Dashboard" CTA also bounced. **Root cause:** the browser client only writes the CSRF cookie, never the auth cookies. Fix: server-owned OAuth flow via `createAuthActions`.
+  3. **Third attempt (callback as Server Component calling `exchangeOAuthCode`):** BROKEN. Next.js 16 runtime error: "Cookies can only be modified in a Server Action or Route Handler." Resolved by converting `app/(auth)/callback/page.tsx` to `app/(auth)/callback/route.ts` (GET Route Handler) which calls `createAuthActions({ requestCookies: request.cookies, responseCookies: response.cookies })`. Verified: `npx tsc --noEmit` clean, `npm run lint` clean, `npm run build` clean — `/callback` listed as a dynamic GET route. Live end-to-end sign-in still requires that `/callback` is in `allowedRedirectUrls` on the InsForge dashboard.
 
 ### 01 Homepage
 

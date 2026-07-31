@@ -3,12 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "./Logo";
+import { AuthAwareCTAs } from "@/components/auth/AuthAwareCTAs";
 
-type Props = {
-  variant?: "landing" | "app";
-};
-
-export function Navbar({ variant = "landing" }: Props) {
+export function Navbar() {
   const pathname = usePathname();
 
   const navItems = [
@@ -16,8 +13,6 @@ export function Navbar({ variant = "landing" }: Props) {
     { href: "/find-jobs", label: "Find Jobs" },
     { href: "/profile", label: "Profile" },
   ];
-
-  const ctaLabel = variant === "landing" ? "Start For Free" : "Sign Out";
 
   return (
     <header className="sticky top-0 z-50 w-full bg-surface border-b border-border">
@@ -43,12 +38,7 @@ export function Navbar({ variant = "landing" }: Props) {
           })}
         </nav>
 
-        <button
-          type="button"
-          className="inline-flex items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-overlay transition-colors"
-        >
-          {ctaLabel}
-        </button>
+        <AuthAwareCTAs variant="navbar" />
       </div>
     </header>
   );

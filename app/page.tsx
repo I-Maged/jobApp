@@ -9,7 +9,7 @@ import { BottomCTA } from "@/components/homepage/BottomCTA";
 export default function HomePage() {
   return (
     <>
-      <Navbar variant="landing" />
+      <Navbar />
       <main className="flex-1">
         <Hero />
         <FeatureSection1 />

@@ -38,12 +38,14 @@ InsForge authentication — Google and GitHub OAuth.
 
 **Logic:**
 
-- Google OAuth via InsForge
-- GitHub OAuth via InsForge
-- OAuth callback handler
-- Session management
-- Middleware protecting /dashboard, /profile, /find-jobs, /find-jobs/[id]
-- After login → redirect to /dashboard
+- Browser client uses `createClient` from `@insforge/sdk` (full client — supports `signInWithOAuth` and auto-detects `insforge_code` on init)
+- Server client uses `createServerClient` from `@insforge/sdk/ssr` (cookie-aware, narrowed auth surface)
+- Both Google and GitHub OAuth via `client.auth.signInWithOAuth(provider, { redirectTo: '<origin>/callback', additionalParams: { prompt: 'select_account' } })`
+- OAuth callback handled at `/callback` (Client Component) — the browser SDK detects `insforge_code` on init and exchanges for a session, then `router.replace('/dashboard')`
+- Session management via the browser client's in-memory token manager + `createServerClient` reading cookies server-side
+- Auth gate lives in **`proxy.ts`** at project root (Next.js 16 — `middleware` was renamed to `proxy`). Matcher: `/dashboard/:path*`, `/profile/:path*`, `/find-jobs/:path*`. Redirects logged-out users to `/login` (no `?next=` round-trip).
+- Server Action `signOutAction()` in `actions/auth.ts` calls `client.auth.signOut()` and redirects to `/`
+- After login → redirect to `/dashboard`
 
 ---
 

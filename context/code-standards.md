@@ -194,7 +194,8 @@ export async function discoverJobs(
 
 ```typescript
 // Browser context — Client Components only
-import { insforge } from "@/lib/insforge-client";
+import { createInsforgeBrowser } from "@/lib/insforge-client";
+const insforge = createInsforgeBrowser();
 
 // Server context — Server Components, Route Handlers, Server Actions, Agent
 import { createInsforgeServer } from "@/lib/insforge-server";
@@ -205,6 +206,7 @@ const insforge = await createInsforgeServer();
 - Never use the server client in browser context
 - Always await createInsforgeServer() — it reads cookies asynchronously
 - Always scope every query to the current user_id — never query without a user filter
+- The browser client is `createClient` from `@insforge/sdk` (full client, supports `signInWithOAuth` and auto-detects `insforge_code` on init). The server client is `createServerClient` from `@insforge/sdk/ssr` (cookie-aware, narrowed auth surface). Both are exported as factory functions — call them at the call site, do not cache singletons.
 
 ---
 
@@ -305,7 +307,7 @@ Never install a new package without a clear reason. Before installing anything c
 
 Approved dependencies for this project:
 
-- `@insforge/ssr` — InsForge client
+- `@insforge/sdk` — InsForge client (includes `/ssr` and `/ssr/middleware` subpaths)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
 - `openai` — GPT-4o API

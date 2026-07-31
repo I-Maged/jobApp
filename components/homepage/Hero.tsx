@@ -1,12 +1,12 @@
-import Link from "next/link";
 import Image from "next/image";
+import { AuthAwareCTAs } from "@/components/auth/AuthAwareCTAs";
 
 export function Hero() {
   return (
     <section className="w-full bg-background">
       <div className="mx-auto max-w-[1440px] px-8 pt-20 pb-16 md:pt-28 md:pb-20">
         <div className="mx-auto flex max-w-3xl flex-col items-center text-center">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight text-text-darkest md:text-6xl">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight text-text-primary md:text-6xl">
             Job hunting is hard. Your tools shouldn&apos;t be.
           </h1>
 
@@ -14,22 +14,7 @@ export function Hero() {
             Stop applying blind. JobPilot finds the jobs, researches the companies, and gives you everything you need to stand out.
           </p>
 
-          <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-text-darkest px-5 py-3 text-sm font-medium text-accent-foreground transition-colors hover:bg-overlay"
-            >
-              Get Started
-              <span aria-hidden="true">&rarr;</span>
-            </Link>
-
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-5 py-3 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary"
-            >
-              Find Your First Match
-            </Link>
-          </div>
+          <AuthAwareCTAs variant="hero" />
         </div>
 
         <div className="mt-16 md:mt-20">

@@ -55,6 +55,7 @@
 │       ├── resume/
 │       │   ├── generate/route.ts          → Generate base resume PDF from profile
 │       │   └── extract/route.ts           → Extract profile data from uploaded resume PDF
+├── proxy.ts                                → Next.js 16 auth gate (was middleware.ts)
 ├── agent/
 │   ├── adzuna.ts                          → Adzuna API job discovery + GPT-4o scoring
 │   ├── research.ts                        → Company research — Browserbase + Stagehand + GPT-4o
@@ -66,6 +67,9 @@
 │   └── jobs.ts                            → Job status updates
 ├── components/
 │   ├── ui/                                → shadcn/ui components only
+│   ├── auth/
+│   │   ├── LoginButtons.tsx
+│   │   └── AuthAwareCTAs.tsx
 │   ├── layout/
 │   │   ├── Navbar.tsx
 │   │   └── Footer.tsx
@@ -94,8 +98,9 @@
 │       ├── CompanyResearch.tsx
 │       └── JobActions.tsx
 ├── lib/
-│   ├── insforge-client.ts                 → InsForge browser client instance
-│   ├── insforge-server.ts                 → InsForge server client
+│   ├── insforge-client.ts                 → InsForge browser client (createClient from @insforge/sdk)
+│   ├── insforge-server.ts                 → InsForge server client (createServerClient from @insforge/sdk/ssr)
+│   ├── get-current-user.ts                → Returns current user or null — used by proxy.ts and helpers
 │   ├── browserbase.ts                     → Browserbase session creation + management
 │   ├── stagehand.ts                       → Stagehand initialisation with Browserbase session
 │   ├── adzuna.ts                          → Adzuna API client
@@ -293,47 +298,51 @@ Access: authenticated users only, own files only.
 - Methods: Google OAuth, GitHub OAuth
 - Protected routes: /dashboard, /profile, /find-jobs, /find-jobs/[id]
 - Public routes: /, /login
-- Middleware in middleware.ts checks session on every protected route
+- **Auth gate lives in `proxy.ts` at project root, not `middleware.ts`** — Next.js 16 renamed `middleware` to `proxy` (function name `proxy`, default Node.js runtime). `proxy.ts` checks the session on every protected route and redirects logged-out users to `/login`
 - On login → redirect to /dashboard
+- OAuth callback handled by `app/(auth)/callback/page.tsx`. The SDK auto-detects `insforge_code` on the browser client and exchanges for a session; the server page just calls `getCurrentUser()` and `redirect()`s to `/dashboard`.
 
 ---
 
 ## InsForge Client Pattern
 
-Two separate InsForge instances — never mix them:
+Two separate InsForge instances — never mix them. The browser client uses the full `@insforge/sdk` (so `signInWithOAuth` is available and the OAuth callback can be auto-detected on init). The server client uses the SSR subpath that knows how to read/write auth cookies.
 
 ```typescript
 // lib/insforge-client.ts
-// Browser-side — used in client components for auth state
-import { createBrowserClient } from "@insforge/ssr";
-export const insforge = createBrowserClient(
-  process.env.NEXT_PUBLIC_INSFORGE_URL!,
-  process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-);
+// Browser-side — used in Client Components for auth state and to initiate OAuth
+import { createClient } from "@insforge/sdk";
+
+export function createInsforgeBrowser() {
+  return createClient({
+    baseUrl: process.env.NEXT_PUBLIC_INSFORGE_URL!,
+    anonKey: process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
+  });
+}
 
 // lib/insforge-server.ts
-// Server-side — used in API routes, Server Actions, agent code
-import { createServerClient } from "@insforge/ssr";
+// Server-side — used in Server Components, Route Handlers, Server Actions, agent code
+import { createServerClient } from "@insforge/sdk/ssr";
 import { cookies } from "next/headers";
 
-export const createInsforgeServer = async () => {
+export async function createInsforgeServer() {
   const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_INSFORGE_URL!,
-    process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
-        },
+  return createServerClient({
+    baseUrl: process.env.NEXT_PUBLIC_INSFORGE_URL!,
+    anonKey: process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
+    cookies: {
+      get: (name) => {
+        const c = cookieStore.get(name);
+        return c ? { name: c.name, value: c.value } : undefined;
       },
     },
-  );
-};
+  });
+}
 ```
+
+`createServerClient` does not expose `setAll` — only `get`. Session writes are handled by the SDK internally; refresh logic in `proxy.ts` uses `updateSession` from `@insforge/sdk/ssr/middleware` when needed.
+
+> **Note:** Older drafts of this doc referenced `@insforge/ssr` and the positional `createBrowserClient(url, anonKey)` signature. The package is now `@insforge/sdk` (with `/ssr` and `/ssr/middleware` subpaths) and the signatures take an options object. Updated 2026-07-31.
 
 ---
 

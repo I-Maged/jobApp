@@ -139,4 +139,62 @@ Centered CTA card with accent-muted background.
 - Card: `mx-auto max-w-3xl rounded-2xl bg-accent-muted px-8 py-16 text-center md:px-12`
 - Headline: `text-3xl font-bold leading-tight tracking-tight text-text-darkest md:text-4xl`
 - Subhead: `mt-4 text-base leading-6 text-text-secondary md:text-lg`
-- Button row: `mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4` (same button styles as Hero)
+- Button row: delegated to `<AuthAwareCTAs variant="bottom" />`
+
+### AuthAwareCTAs — `components/auth/AuthAwareCTAs.tsx`
+
+Client Component that reads auth state on mount and renders different CTAs per variant.
+
+- Variants: `"hero"`, `"bottom"`, `"navbar"`
+- Container (hero): `mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4`
+- Container (bottom): `mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4`
+- Primary button: `inline-flex items-center justify-center gap-2 rounded-md bg-text-darkest px-5 py-3 text-sm font-medium text-accent-foreground transition-colors hover:bg-overlay`
+- Secondary button: `inline-flex items-center justify-center rounded-md border border-border bg-surface px-5 py-3 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary`
+- Navbar variant: `inline-flex items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-overlay`
+- Loading placeholder (navbar): `inline-flex h-9 w-24 items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-accent-foreground opacity-60`
+- Label switch on auth — signed in: "Open Dashboard" / "Find Your Next Match" / "Sign Out"; signed out: "Get Started" / "Find Your First Match" / "Start For Free"
+
+### LoginButtons — `components/auth/LoginButtons.tsx`
+
+File: `components/auth/LoginButtons.tsx`
+Last updated: 2026-07-31
+
+Client component. Two stacked OAuth submit buttons (Google + GitHub). Each button reads `useFormStatus().pending` from inside its own `<form>` to disable itself and swap its label to "Redirecting…" while the form is in flight, preventing double-submits.
+
+| Property         | Class |
+| ---------------- | ----- |
+| Background       | `bg-text-darkest` |
+| Border           | none |
+| Border radius    | `rounded-md` |
+| Text — primary   | `text-accent-foreground` (on the dark button) |
+| Text — label     | `text-sm font-medium` |
+| Spacing          | container `flex flex-col gap-3`; button `inline-flex items-center justify-center gap-3 px-5 py-3 w-full` |
+| Hover state      | `hover:bg-overlay` |
+| Disabled state   | `disabled:cursor-not-allowed disabled:opacity-60` |
+| Transition       | `transition-colors` |
+| Shadow           | none |
+| Accent usage     | none |
+
+**Icon (Google "G" / GitHub Octocat)**
+- Inline SVG, `h-5 w-5`, `fill="currentColor"` — picked up from the button's `text-on-dark` utility (no raw hex on the path)
+- `aria-hidden="true"`, `xmlns="http://www.w3.org/2000/svg"`, `viewBox="0 0 24 24"`
+
+**Pattern notes:**
+- The button is a **full-width dark filled button** (the inverse of the marketing site's outline / light buttons). Match this weight when adding more OAuth providers.
+- Label uses `text-on-dark`, not `text-accent-foreground`. See `ui-tokens.md` "Text on Dark Surfaces" — these tokens are not interchangeable.
+- `useFormStatus` must be read inside the `<form>` it controls — keep `SubmitButton` nested under the form, not hoisted out.
+- Pending label uses a Unicode ellipsis `"Redirecting…"`, not three dots.
+- The previous standalone `AuthButton.tsx` was deleted; `LoginButtons` is now self-contained.
+
+**Pattern notes:**
+- The button is a **full-width dark filled button** (the inverse of the marketing site's outline / light buttons). Match this weight when adding more OAuth providers.
+- `useFormStatus` must be read inside the `<form>` it controls — keep `SubmitButton` nested under the form, not hoisted out.
+- Pending label uses a Unicode ellipsis `"Redirecting…"`, not three dots.
+- The previous standalone `AuthButton.tsx` was deleted; `LoginButtons` is now self-contained.
+
+### AuthLayout — `app/(auth)/layout.tsx`
+
+Centered shell for login + callback routes. No nav/footer, brand logo above the card.
+
+- Wrapper: `flex min-h-full flex-1 flex-col items-center justify-center bg-background px-6 py-12`
+- Logo block: `mb-8`

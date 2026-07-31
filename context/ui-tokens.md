@@ -68,6 +68,10 @@ className="bg-purple-500 text-gray-600"
   --color-accent-muted: #faf5ff;
   --color-accent-foreground: #ffffff;
 
+  /* Foreground rendered on a dark filled surface
+     (buttons, dark cards, anything on bg-text-darkest / bg-overlay). */
+  --color-on-dark: #ffffff;
+
   /* Success — green */
   --color-success: #10b981;
   --color-success-alt: #00bc7d;
@@ -152,6 +156,17 @@ Used for: primary buttons, active nav items, match score bars, tailored badge, f
 | Button text            | `text-accent-foreground` |
 | Light badge background | `bg-accent-light`        |
 | Subtle background      | `bg-accent-muted`        |
+
+### Text on Dark Surfaces
+
+Used for: any foreground (text, icon path, divider) rendered on a dark filled surface — `bg-text-darkest`, `bg-overlay`, `bg-error`, `bg-success-dark`, etc.
+
+| Element            | Token                          |
+| ------------------ | ------------------------------ |
+| Text on dark       | `text-on-dark` (`#ffffff`)     |
+| Icon path on dark  | `fill="currentColor"` with `text-on-dark` on parent |
+
+`on-dark` is **not** interchangeable with `accent-foreground`: `accent-foreground` means "foreground on the accent purple button"; `on-dark` means "foreground on any dark surface." Use `on-dark` for OAuth buttons, dark nav variants, etc.
 
 ### Match Score Colors
 
