@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 2 — Profile Page
-**Last completed:** 05 Profile Page — Full UI
-**Next:** 06 Profile Save Logic
+**Last completed:** 06 Profile Save Logic
+**Next:** 07 AI Profile Extraction from Resume
 
 ---
 
@@ -24,7 +24,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 2 — Profile Page
 
 - [x] 05 Profile Page — Full UI
-- [ ] 06 Profile Save Logic
+- [x] 06 Profile Save Logic
 - [ ] 07 AI Profile Extraction from Resume
 - [ ] 08 Resume PDF Generation from Profile
 
@@ -49,6 +49,25 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 06 Profile Save Logic
+
+- **Resume upload is a Route Handler (`app/api/resume/upload/route.ts`), not a Server Action.** Next.js 16 Server Actions cap request bodies at **1MB by default** (per `node_modules/next/dist/docs/01-app/02-guides/server-actions.md`). Resumes up to 10MB cannot fit through an action. Route handlers don't carry that cap. The handler authenticates via `getCurrentUser()` server-side because `proxy.ts`'s matcher only covers `/dashboard`, `/profile`, `/find-jobs` — not `/api/*`. Auth wraps the body parse: if no user, return 401 before touching the file.
+- **`POST /api/resume/upload` does the full upload → URL → DB write in one request.** InsForge server-side: `storage.from("resumes").upload(path, file)` (PUT semantics — same path overwrites in place, per SDK 1.5.1 docs which dropped the old `upsert: true` option), `getPublicUrl(path)`, then `database.from("profiles").update({ resume_pdf_url, updated_at }).eq("id", user.id)`. After write, the page is revalidated by the client making a second navigation; the route handler itself doesn't need to (the Server Component re-fetches and reads the new URL).
+- **`saveProfile` Server Action stays in `actions/profile.ts`.** No body-size risk — `Save Profile` only ships the typed form JSON. `revalidatePath("/profile")` runs at the end so the just-saved values re-render immediately on the next request.
+- **`profile_completed` PostHog event fires only on the false → true flip.** `saveProfile` reads the existing row, computes the new completion, and emits the event iff `completion.isComplete && !existing?.isComplete`. Re-saving a completed profile does not re-fire. Resolves the open question in the prior memory about PostHog setup — `lib/posthog-server.ts` already no-ops gracefully when `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` / `NEXT_PUBLIC_POSTHOG_HOST` are unset, so 06 ships without any extra env var work.
+- **`types/index.ts` lands in 06.** Fills the placeholder in `architecture.md` (used to read "→ Global TypeScript types"). Exports `Profile`, `ProfileFormState`, `WorkExperienceRole`, `Education`, plus the four enum-string unions (`ExperienceLevel`, `RemotePreference`, `WorkAuthorization`, `HighestDegree`) and an `EMPTY_EDUCATION` constant used by the page. The `ProfileFormState` is a parallel shape with CSV strings for the four array fields — used as the Server Action input.
+- **jsonb cast lives in `lib/profile-data.ts`, not in `actions/profile.ts`.** A typed `fetchProfile(userId)` returns a fully-typed `Profile | null`. The page passes its array fields to the form already joined as CSV via `arrayToCsv()`. Server Action round-trips the same arrays as CSVs and passes them directly to PostgREST. `work_experience` and `education` jsonb cast lives at one boundary; nothing else touches `unknown`.
+- **CSV round-trip for array fields** (`skillsCsv`, `industriesCsv`, `jobTitlesSeekingCsv`, `preferredLocationsCsv`). The Server Action `split(",").map(s => s.trim()).filter(Boolean)`s into `string[]`. The form's tag chips and the CSV input render the same data — the chips hold the typed array, the input holds the joined string. Avoids adding extra `<input type="hidden">` for array serialization.
+- **`ProfileForm.tsx` stays a single Client Component, Save wires via `useTransition`.** Matches the prior memory's decision lean (do not split Server + Client yet). `useTransition` exposes `pending` for the Save button label ("Saving…") and a `useEffect` auto-resets the success banner after 4 s.
+- **`calculateCompletion()` lives in `lib/completion.ts`, pure function.** The page calls it for the banner's percent + missing labels; `saveProfile` calls it to compute `is_complete` for the upsert. Two callers, one definition — they cannot drift.
+- **Required-field set: 11 fields** — full name, phone, location, current title, experience level, years, 1+ skill, degree (non-empty), field of study, 1+ titles seeking, remote preference. Empty `experienceLevel` (initial select state) and empty `remotePreference` count as missing. `"Other"` degree counts as filled (any non-empty value clears the DEGREE requirement).
+- **Banner headline swaps between "Profile needs attention" and "Profile complete"** based on `isComplete`. Body copy swaps to "Tailored matches and resume generation are unlocked." Same card shell. The mock 70% / PHONE / LOCATION / EDUCATION values from Feature 05 are gone — real completion drives both.
+- **`ResumePreview.tsx` stays deferred.** "View current resume" is a plain `<a target="_blank">` link in the upload card's footer row (driven by `profile.resume_pdf_url`). A 4-line `<a>` is enough — no new component, no PDF preview surface until a saved PDF's content actually matters to the user (post-extract).
+- **SDK API surface is `client.database.from(table).upsert(...)` / `.update(...)`, not `client.from(table)`.** The legacy pattern from `library-docs.md` is outdated with `@insforge/sdk@1.5.1`. Fixed in 06 — needs a follow-up doc refresh for `library-docs.md` InsForge section. Open question.
+- **Empty Work Experience list renders an empty-state card** ("No work experience added yet. Click 'Add role' to record one." with a dashed border). Feature 05's mock seeded a filled role; on a fresh profile the form starts with no roles so the user clicks `Add role` deliberately. Same UX as the existing chip lists when empty.
+- **`work_experience` `endDate` is cleared when `current === true` server-side.** The Server Action maps `r.current ? "" : r.endDate` before upsert so the column is consistent regardless of what the client has in state. Local form state still preserves the prior value so toggling off `current` restores it.
+- **All Save / Extract / Generate buttons handle future features correctly.** Save is wired (06). Extract stays disabled with `title="Extract from Resume lands in Feature 07"` — Feature 07 owns that wiring. Generate Resume from Profile stays disabled with `title="Generate Resume lands in Feature 08"`.
 
 ### 05 Profile Page — Full UI
 

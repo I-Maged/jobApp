@@ -1,65 +1,83 @@
 "use client";
 
-import { useState } from "react";
-
-type WorkRole = {
-  id: string;
-  company: string;
-  title: string;
-  startDate: string;
-  endDate: string;
-  current: boolean;
-  accomplishments: string;
-};
+import { useEffect, useState, useTransition } from "react";
+import { saveProfile } from "@/actions/profile";
+import type {
+  ExperienceLevel,
+  HighestDegree,
+  ProfileFormState,
+  RemotePreference,
+  WorkAuthorization,
+  WorkExperienceRole,
+} from "@/types";
 
 type Props = {
   initialEmail: string;
-  initialFullName: string;
+  initial: ProfileFormState;
   hasResume: boolean;
 };
 
-const initialWorkRoles: WorkRole[] = [
-  {
-    id: "role-1",
-    company: "Vercel",
-    title: "Frontend Engineer",
-    startDate: "2022-01",
-    endDate: "",
-    current: true,
-    accomplishments:
-      "Built high-performance web applications with Next.js and Tailwind CSS. Shipped core dashboard surfaces consumed by tens of thousands of developers every week.",
-  },
-];
-
 const MAX_WORK_ROLES = 3;
 
-export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props) {
-  const [fullName, setFullName] = useState(initialFullName);
-  const [phone, setPhone] = useState("");
-  const [location, setLocation] = useState("");
-  const [linkedin, setLinkedin] = useState("https://linkedin.com/in/faizan");
-  const [portfolio, setPortfolio] = useState("https://github.com/faizanali");
-  const [workAuthorization, setWorkAuthorization] = useState("citizen");
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-  const [currentTitle, setCurrentTitle] = useState("Frontend Engineer");
-  const [experienceLevel, setExperienceLevel] = useState("junior");
-  const [yearsExperience, setYearsExperience] = useState("4");
+function generateRoleId(): string {
+  return `role-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+export function ProfileForm({ initialEmail, initial, hasResume }: Props) {
+  const [fullName, setFullName] = useState(initial.fullName);
+  const [phone, setPhone] = useState(initial.phone);
+  const [location, setLocation] = useState(initial.location);
+  const [linkedinUrl, setLinkedinUrl] = useState(initial.linkedinUrl);
+  const [portfolioUrl, setPortfolioUrl] = useState(initial.portfolioUrl);
+  const [workAuthorization, setWorkAuthorization] = useState<WorkAuthorization>(
+    initial.workAuthorization,
+  );
+
+  const [currentTitle, setCurrentTitle] = useState(initial.currentTitle);
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | "">(
+    initial.experienceLevel,
+  );
+  const [yearsExperience, setYearsExperience] = useState(initial.yearsExperience);
   const [skillInput, setSkillInput] = useState("");
-  const [skills, setSkills] = useState<string[]>(["React", "TypeScript", "Next.js", "Tailwind CSS"]);
+  const [skills, setSkills] = useState<string[]>(csvToArr(initial.skillsCsv));
   const [industryInput, setIndustryInput] = useState("");
-  const [industries, setIndustries] = useState<string[]>([]);
+  const [industries, setIndustries] = useState<string[]>(
+    csvToArr(initial.industriesCsv),
+  );
 
-  const [roles, setRoles] = useState<WorkRole[]>(initialWorkRoles);
+  const [roles, setRoles] = useState<WorkExperienceRole[]>(
+    initial.workExperience.length > 0 ? initial.workExperience : [],
+  );
 
-  const [highestDegree, setHighestDegree] = useState("high_school");
-  const [fieldOfStudy, setFieldOfStudy] = useState("Computer Science");
-  const [institutionName, setInstitutionName] = useState("");
-  const [graduationYear, setGraduationYear] = useState("");
+  const [highestDegree, setHighestDegree] = useState<HighestDegree | "">(
+    initial.highestDegree,
+  );
+  const [fieldOfStudy, setFieldOfStudy] = useState(initial.fieldOfStudy);
+  const [institutionName, setInstitutionName] = useState(initial.institutionName);
+  const [graduationYear, setGraduationYear] = useState(initial.graduationYear);
 
-  const [titlesSeeking, setTitlesSeeking] = useState("Frontend Engineer, React Developer");
-  const [remotePreference, setRemotePreference] = useState("any");
-  const [salaryExpectation, setSalaryExpectation] = useState("");
-  const [preferredLocations, setPreferredLocations] = useState("");
+  const [titlesSeeking, setTitlesSeeking] = useState(initial.jobTitlesSeekingCsv);
+  const [remotePreference, setRemotePreference] = useState<RemotePreference>(
+    initial.remotePreference,
+  );
+  const [salaryExpectation, setSalaryExpectation] = useState(
+    initial.salaryExpectation,
+  );
+  const [preferredLocations, setPreferredLocations] = useState(
+    initial.preferredLocationsCsv,
+  );
+
+  const [pending, startTransition] = useTransition();
+  const [status, setStatus] = useState<SaveStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status !== "saved") return;
+    const timeout = window.setTimeout(() => setStatus("idle"), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [status]);
 
   const addSkill = () => {
     const trimmed = skillInput.trim();
@@ -88,7 +106,7 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
     setRoles([
       ...roles,
       {
-        id: `role-${Date.now()}`,
+        id: generateRoleId(),
         company: "",
         title: "",
         startDate: "",
@@ -103,12 +121,47 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
     setRoles(roles.filter((r) => r.id !== id));
   };
 
-  const updateRole = (id: string, patch: Partial<WorkRole>) => {
+  const updateRole = (id: string, patch: Partial<WorkExperienceRole>) => {
     setRoles(roles.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   };
 
+  const handleSave = () => {
+    setErrorMessage(null);
+    setStatus("saving");
+    startTransition(async () => {
+      const result = await saveProfile({
+        fullName,
+        phone,
+        location,
+        linkedinUrl,
+        portfolioUrl,
+        workAuthorization,
+        currentTitle,
+        experienceLevel,
+        yearsExperience,
+        skillsCsv: skills.join(", "),
+        industriesCsv: industries.join(", "),
+        workExperience: roles,
+        highestDegree,
+        fieldOfStudy,
+        institutionName,
+        graduationYear,
+        jobTitlesSeekingCsv: titlesSeeking,
+        remotePreference,
+        salaryExpectation,
+        preferredLocationsCsv: preferredLocations,
+      });
+      if (result.success) {
+        setStatus("saved");
+      } else {
+        setStatus("error");
+        setErrorMessage(result.error ?? "Failed to save profile");
+      }
+    });
+  };
+
   return (
-    <form className="flex flex-col gap-6">
+    <form className="flex flex-col gap-6" onSubmit={(e) => e.preventDefault()}>
       <SectionCard title="Personal Info" description="Basic details about you.">
         <Field label="Full Name" htmlFor="full_name">
           <input
@@ -148,8 +201,8 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
         <Field label="LinkedIn URL" htmlFor="linkedin">
           <input
             id="linkedin"
-            value={linkedin}
-            onChange={(e) => setLinkedin(e.target.value)}
+            value={linkedinUrl}
+            onChange={(e) => setLinkedinUrl(e.target.value)}
             placeholder="https://linkedin.com/in/your-handle"
             className={inputClass}
           />
@@ -157,8 +210,8 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
         <Field label="Portfolio / GitHub" htmlFor="portfolio">
           <input
             id="portfolio"
-            value={portfolio}
-            onChange={(e) => setPortfolio(e.target.value)}
+            value={portfolioUrl}
+            onChange={(e) => setPortfolioUrl(e.target.value)}
             placeholder="https://github.com/your-handle"
             className={inputClass}
           />
@@ -167,7 +220,7 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
           <select
             id="work_authorization"
             value={workAuthorization}
-            onChange={(e) => setWorkAuthorization(e.target.value)}
+            onChange={(e) => setWorkAuthorization(e.target.value as WorkAuthorization)}
             className={inputClass}
           >
             <option value="citizen">Citizen</option>
@@ -191,7 +244,7 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
           <select
             id="experience_level"
             value={experienceLevel}
-            onChange={(e) => setExperienceLevel(e.target.value)}
+            onChange={(e) => setExperienceLevel(e.target.value as ExperienceLevel | "")}
             className={inputClass}
           >
             <option value="junior">Junior</option>
@@ -251,18 +304,24 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
           </button>
         }
       >
-        <div className="flex flex-col gap-4">
-          {roles.map((role, index) => (
-            <WorkRoleCard
-              key={role.id}
-              role={role}
-              index={index}
-              canRemove={roles.length > 1}
-              onChange={(patch) => updateRole(role.id, patch)}
-              onRemove={() => removeRole(role.id)}
-            />
-          ))}
-        </div>
+        {roles.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border-light bg-surface-secondary px-4 py-6 text-center text-sm text-text-muted">
+            No work experience added yet. Click &ldquo;Add role&rdquo; to record one.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {roles.map((role, index) => (
+              <WorkRoleCard
+                key={role.id}
+                role={role}
+                index={index}
+                canRemove={roles.length > 1}
+                onChange={(patch) => updateRole(role.id, patch)}
+                onRemove={() => removeRole(role.id)}
+              />
+            ))}
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard title="Education" description="Your highest degree or current program.">
@@ -270,7 +329,7 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
           <select
             id="highest_degree"
             value={highestDegree}
-            onChange={(e) => setHighestDegree(e.target.value)}
+            onChange={(e) => setHighestDegree(e.target.value as HighestDegree | "")}
             className={inputClass}
           >
             <option value="high_school">High School</option>
@@ -327,7 +386,7 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
           <select
             id="remote_preference"
             value={remotePreference}
-            onChange={(e) => setRemotePreference(e.target.value)}
+            onChange={(e) => setRemotePreference(e.target.value as RemotePreference)}
             className={inputClass}
           >
             <option value="remote">Remote</option>
@@ -356,30 +415,55 @@ export function ProfileForm({ initialEmail, initialFullName, hasResume }: Props)
         </Field>
       </SectionCard>
 
-      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {hasResume ? (
+      <div className="flex flex-col gap-3">
+        {status === "saved" ? (
+          <div
+            role="status"
+            className="rounded-md border border-success-lightest bg-success-lightest px-4 py-2.5 text-sm font-medium text-success-foreground"
+          >
+            Profile saved successfully.
+          </div>
+        ) : null}
+        {status === "error" && errorMessage ? (
+          <div
+            role="alert"
+            className="rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error"
+          >
+            {errorMessage}
+          </div>
+        ) : null}
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {hasResume ? (
+            <button
+              type="button"
+              disabled
+              title="Extract from Resume lands in Feature 07"
+              className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Extract from Resume
+            </button>
+          ) : (
+            <span className="text-xs text-text-muted">Upload a resume above to enable extraction.</span>
+          )}
           <button
             type="button"
-            disabled
-            title="Extract from Resume lands in Feature 07"
-            className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleSave}
+            disabled={pending}
+            className="inline-flex w-full items-center justify-center rounded-md bg-accent px-5 py-3 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
-            Extract from Resume
+            {pending ? "Saving…" : "Save Profile"}
           </button>
-        ) : (
-          <span className="text-xs text-text-muted">Upload a resume above to enable extraction.</span>
-        )}
-        <button
-          type="button"
-          disabled
-          title="Save Profile lands in Feature 06"
-          className="inline-flex w-full items-center justify-center rounded-md bg-accent px-5 py-3 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-        >
-          Save Profile
-        </button>
+        </div>
       </div>
     </form>
   );
+}
+
+function csvToArr(v: string): string[] {
+  return v
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 const inputClass =
@@ -525,10 +609,10 @@ function WorkRoleCard({
   onChange,
   onRemove,
 }: {
-  role: WorkRole;
+  role: WorkExperienceRole;
   index: number;
   canRemove: boolean;
-  onChange: (patch: Partial<WorkRole>) => void;
+  onChange: (patch: Partial<WorkExperienceRole>) => void;
   onRemove: () => void;
 }) {
   return (
@@ -592,7 +676,12 @@ function WorkRoleCard({
           <input
             type="checkbox"
             checked={role.current}
-            onChange={(e) => onChange({ current: e.target.checked, endDate: e.target.checked ? "" : role.endDate })}
+            onChange={(e) =>
+              onChange({
+                current: e.target.checked,
+                endDate: e.target.checked ? "" : role.endDate,
+              })
+            }
             className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
           />
           Currently working here

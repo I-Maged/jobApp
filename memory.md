@@ -1,92 +1,100 @@
-# Memory — Feature 05 Profile Page — Full UI
+# Memory — Feature 06 Profile Save Logic
 
 Last updated: 2026-08-01
 
 ## What was built
 
-### Feature 05 Profile Page — Full UI (and follow-ups)
+### Feature 06 Profile Save Logic
 
-- **`components/profile/ProfileForm.tsx`** — single Client Component, five sections: Personal Info (full name, locked email, phone, location, LinkedIn, portfolio, work authorization), Professional Info (current title, experience level, years, skills + industries tag inputs), Work Experience (up to 3 role cards with add/remove + "currently working here" checkbox), Education (degree/field/institution/year), Job Preferences (titles seeking, remote preference, salary, locations). Save and Extract buttons disabled with tooltips naming the future feature numbers.
-- **`components/profile/ResumeUpload.tsx`** — section card with drag-and-drop `<label>` (hidden `<input type="file">` inside), filename chip, Select Resume button, Generate Resume from Profile CTA in a secondary tile (disabled tooltip).
-- **`components/profile/CompletionIndicator.tsx`** — inline-SVG ring (72px, stroke 6) with `stroke-accent` fill and animated dashoffset, percent label centered, missing-field tags rendered with `bg-accent-muted text-accent` token. Props: `percent`, `missingLabels`.
-- **`app/profile/page.tsx`** — async Server Component, calls `getCurrentUser()` server-side, passes `initialEmail` + `initialFullName` to `<ProfileForm />`. Header card with "Profile needs attention" + `<CompletionIndicator />`. Hardcoded 70% completion with PHONE / LOCATION / EDUCATION flagged.
-- **`app/layout.tsx`** — added `<Navbar />` to the root layout (was missing — feature 01 shipped `<Navbar />` but it was only locally imported by `app/page.tsx`).
-- **`app/page.tsx`** — removed local `<Navbar />` import (now rendered by root layout, was duplicated).
-- **`app/(auth)/callback/route.ts:17`** — post-OAuth redirect changed from `/dashboard` to `/profile` (dashboard page does not exist yet).
+- **`types/index.ts`** — new file (filled the placeholder in `architecture.md`). Exports `Profile`, `ProfileFormState`, `WorkExperienceRole`, `Education`, the four enum string unions (`ExperienceLevel`, `RemotePreference`, `WorkAuthorization`, `HighestDegree`) plus `EMPTY_EDUCATION` constant.
+- **`lib/completion.ts`** — pure `calculateCompletion(profile)` with 11 required fields. Required set is fixed: full name, phone, location, current title, experience level, years, 1+ skill, degree (non-empty), field of study, 1+ titles seeking, remote preference. Empty `experienceLevel` / `remotePreference` count as missing; `"Other"` degree counts as filled.
+- **`lib/profile-data.ts`** — `fetchProfile(userId)` server-side read with jsonb cast at one boundary. Returns `Profile | null`. Plus `csvToArray` / `arrayToCsv` helpers for the array-field round-trip.
+- **`actions/profile.ts`** — `saveProfile(input)` Server Action. Validates fields, computes completion, upserts `profiles` row (PK = `user.id`) via `database.from("profiles").upsert(row, { onConflict: "id" })`, calls `revalidatePath("/profile")`. Fires `profile_completed` PostHog event only on the false→true flip. Returns `{ success, error? }` per `code-standards.md`.
+- **`app/api/resume/upload/route.ts`** — Route Handler (NOT a Server Action — see Decisions). Authenticates server-side via `getCurrentUser()` (proxy.ts matcher doesn't cover `/api/*`). 10MB PDF cap + content type + extension check. Uploads to `resumes/{user_id}/resume.pdf` (PUT semantics — same path overwrites). Persists public URL to `profiles.resume_pdf_url`. Returns `{ success, resumeUrl, error? }`.
+- **`components/profile/ProfileForm.tsx`** — accepts typed `initial: ProfileFormState` prop + `initialEmail` + `hasResume`. `useState` defaults now pulled from props, not hardcoded. Save button wired via `useTransition` to `saveProfile`. Status state machine: `idle | saving | saved | error`. Success banner uses `bg-success-lightest text-success-foreground`; error banner uses `border-error text-error`. Saved state auto-resets to idle after 4s via `useEffect`. Save label flips to `"Saving…"` while pending. Empty work-experience list shows a dashed-border empty state. `onSubmit` preventDefault so Enter in a field does not post.
+- **`components/profile/ResumeUpload.tsx`** — accepts `hasResume: boolean` + `resumeUrl: string | null` props. Drag-drop OR click both route through `handleFile` → `fetch('/api/resume/upload', { method: 'POST', body: formData })` via `useTransition`. Spinner SVG inside filename chip during pending. Error renders under chip with `text-error`. Input `e.target.value = ""` reset so same file can be re-picked. "Generate Resume from Profile" CTA stays disabled with `Feature 08` tooltip.
+- **`app/profile/page.tsx`** — async Server Component now reads `getCurrentUser()` + `fetchProfile(user.id)` server-side, computes real completion, swaps banner headline/body between "needs attention" / "Profile complete" based on `isComplete`. Passes typed `initial` form state + `hasResume` + `resumeUrl` to children. `proxy.ts` auth gate unchanged.
 
 ### Docs edited
 
-- **`context/ui-registry.md`** — appended "Phase 2 — Profile Components (imprinted 2026-08-01)" section with three full entries (`CompletionIndicator`, `ResumeUpload`, `ProfileForm`) plus an inline `ProfileBanner` note. Each entry has the token class table + pattern notes. Filename: `D:\career\jobapp\context\ui-registry.md`.
-- **`context/progress-tracker.md`** — Phase 2 status block updated; "Last completed: 05 Profile Page — Full UI", "Next: 06 Profile Save Logic"; checkbox marked; new "05 Profile Page — Full UI" decisions section added (12 items).
+- **`context/ui-registry.md`** — appended 06 rewiring notes on `ResumeUpload`, `ProfileForm`, `ProfileBanner` entries (props tables + pattern notes). Last-updated stamps refreshed.
+- **`context/progress-tracker.md`** — Phase 2 status block updated; "Last completed: 06 Profile Save Logic", "Next: 07 AI Profile Extraction from Resume"; checkbox marked `[x] 06`; new "### 06 Profile Save Logic" decisions section added (16 items).
 
 ## Decisions made
 
-- **Single `ProfileForm.tsx` Client Component for all five sections** rather than per-section files. Form state in one place so Feature 06's save action has cross-section visibility. Internal sub-components `SectionCard`, `Field`, `TagInputField`, `WorkRoleCard` keep JSX readable.
-- **`CompletionIndicator` and `ResumeUpload` are independent components**, no shared state with the form. Banner can render before form is loaded; Feature 06 can swap form to a Server Action without touching banner.
-- **Missing-field tags use `bg-accent-muted text-accent`** — the design text said "red", but the design system has no red token for this purpose and `AGENTS.md` forbids raw color classes. Closest "highlight that draws attention" pair is the missing-skill badge token.
-- **Email pre-filled from `getCurrentUser()` in Feature 05** (resolved open question from prior memory). Disabled input uses `cursor-not-allowed bg-surface-secondary text-text-secondary`. Phase 2 of Profile: server fetches and passes down.
-- **Work experience capped at 3 roles.** `Add role` disabled when at cap. "Currently working here" checkbox clears and disables End Date input. Start/End Date use `type="month"` (resolved prior open question).
-- **Industries chip color**: `bg-info-lightest text-info-foreground` to differentiate the optional field from required skills — same chip shape, no new color token.
-- **Save / Extract / Generate buttons disabled with tooltips pointing at future feature numbers** (06 / 07 / 08). Form fills freely; clicks do nothing yet.
-- **`app/profile/page.tsx` is an async Server Component**, server-fetches `getCurrentUser()`, no DB writes this pass, no `revalidatePath`. Auth gate is the existing `proxy.ts`.
-- **Navbar now lives in `app/layout.tsx` (root layout), not on individual pages.** Reverted per-page placement from Feature 01. Single source of truth — any new page gets the nav automatically. `AuthLayout` (`app/(auth)/layout.tsx`) keeps its own centered logo for `/login` + `/callback` (no nav/footer per ui-registry.md pattern).
-- **`/callback` redirects to `/profile` post-auth** until dashboard lands. One-line swap when Feature 14 ships.
-- **Resume upload area is a `<label>` wrapping a hidden `<input type="file">`.** Click anywhere opens picker. Drag/drop populates filename chip only — actual upload is Feature 06.
-- **No `ResumePreview.tsx` in 05** — useless without a saved PDF. Skip for now; add later without registry disruption.
+- **Resume upload is a Route Handler, not a Server Action.** Next.js 16 Server Actions cap request bodies at 1MB by default (verified against `node_modules/next/dist/docs/01-app/02-guides/server-actions.md`). Resumes up to 10MB cannot fit through an action. Route Handlers don't carry that cap. The handler authenticates via `getCurrentUser()` server-side because `proxy.ts`'s matcher only covers `/dashboard/:path*`, `/profile/:path*`, `/find-jobs/:path*` — not `/api/*`.
+- **InsForge SDK API shape changed: `client.database.from(table)` and `client.storage.from(bucket)`, not `client.from(table)`.** Verified against the installed `@insforge/sdk@1.5.1` type defs (`dist/client-BjhyKtje.d.mts:1038`). Legacy pattern in `context/library-docs.md` is outdated. Documented as an open question for follow-up docs refresh — flagged for Feature 07+.
+- **`storage.from("resumes").upload(path, file)` — no `upsert: true` flag.** SDK 1.5.1 docs: "Standard PUT semantics: uploading to an existing key replaces the current object in place." Removed the third arg `{ contentType: "application/pdf" }` because the storage object's `contentType` is inferred from the file. Re-upload just calls upload with the same path.
+- **`profile_completed` fires only on the false → true flip.** Inside `saveProfile`: read existing row, compute completion, emit event iff `completion.isComplete && !existing?.isComplete`. Re-saving a complete profile does not re-fire.
+- **`types/index.ts` lands in 06.** Fills the placeholder in `architecture.md` line 111. All form types and DB row types share one source.
+- **jsonb cast lives in `lib/profile-data.ts`, not `actions/profile.ts`.** `fetchProfile()` returns a fully-typed `Profile | null`. Server Action takes typed CSV inputs and writes the typed `workExperience` / `education` shapes directly to PostgREST jsonb. Only one place deals with the `unknown`→`Profile` narrowing.
+- **CSV round-trip for array fields.** `ProfileFormState` has `skillsCsv` / `industriesCsv` / `jobTitlesSeekingCsv` / `preferredLocationsCsv` — the form binds an `<input>` to each string, splits at the boundary. Server Action round-trips back into `string[]` before `upsert`. Avoids `<input type="hidden">` shims for the four arrays.
+- **`ProfileForm.tsx` stays a single Client Component, Save wires via `useTransition`.** Matches the prior memory's decision lean (do not split Server + Client yet).
+- **`calculateCompletion()` in `lib/completion.ts` is the single source of truth.** Page calls it for the banner's percent + missing labels; `saveProfile` calls it for the `is_complete` upsert. Two callers, one definition.
+- **Required-field set: 11 fields.** Empty `experienceLevel` and `remotePreference` count as missing. `"Other"` degree counts as filled (any non-empty value clears the requirement).
+- **Banner headline and body copy swap.** "needs attention" + "Complete the missing fields to improve…" → "Profile complete" + "Tailored matches and resume generation are unlocked."
+- **`ResumePreview.tsx` stays deferred.** "View current resume" is a plain `<a target="_blank">` link in the upload card's footer row. Resolves prior memory's open question 2 (lean: thin `<a>` link, no PDF preview component).
+- **Empty Work Experience list renders an empty-state card.** Replaces the Feature 05 mock seed of one filled role — fresh users start blank, click `Add role` deliberately.
+- **`work_experience` `endDate` is cleared server-side when `current === true`.** Server Action maps `r.current ? "" : r.endDate` before upsert. Local form state still preserves the prior value so toggling off `current` restores it.
+- **Save / Extract / Generate buttons** — Save is wired (06). Extract stays disabled with `title="Extract from Resume lands in Feature 07"`. Generate Resume stays disabled with `title="Generate Resume lands in Feature 08"`.
 
 ## Problems solved
 
-- **Server Component -> Client Component prop crossing** (`Event handlers cannot be passed to Client Component props` on `<ProfileForm onExtract=...>`). Removed the `onExtract` prop entirely from `ProfileForm` — button is disabled with tooltip, callback was dead code. Updated page to not pass it.
-- **Duplicate Navbar on homepage.** Root layout now renders `<Navbar />`; the local import in `app/page.tsx` was removed so it doesn't double-render.
-- **ESLint unused-`hasResume` warning on `ResumeUpload`.** Used the prop as `hasResume` first, then `_props`, both flagged by `@typescript-eslint/no-unused-vars`. Final fix: drop the prop signature and accept no props at all — `hasResume` will re-appear in Feature 06 when the file actually consumes it.
+- **Server Actions in Next.js 16 cap body size at 1MB.** Found by reading `node_modules/next/dist/docs/01-app/02-guides/server-actions.md` before writing `uploadResume`. Resume PDF is up to 10MB — cannot fit through an action. Solution: Route Handler at `app/api/resume/upload/route.ts`. Auth handled server-side via `getCurrentUser()` because `proxy.ts` matcher doesn't cover `/api/*`.
+- **InsForge SDK surface change.** Initial code used the legacy `client.from("profiles")` pattern from `library-docs.md`. TypeScript error: `Property 'from' does not exist on type 'InsForgeClient'`. Fixed by reading the actual installed SDK type defs (`client-BjhyKtje.d.mts`) and discovered the modern API is `client.database.from(table)` / `client.storage.from(bucket)`. Updated all three call sites: `lib/profile-data.ts`, `actions/profile.ts`, `app/api/resume/upload/route.ts`. The legacy pattern in `library-docs.md` is now known-outdated — open question to fix.
+- **`storage.upload(path, file)` signature is 2-arg, not 3-arg.** Old SDK accepted `{ contentType, upsert }` options. New SDK: PUT-overwrites semantics, no options object. Removed `{ contentType: "application/pdf" }` from the call.
+- **ESLint `react/no-unescaped-entities` on `"Add role"` literal.** Escaped to `&ldquo;` and `&rdquo;` in `ProfileForm.tsx`.
+- **`profiles_experience_level_check` violation on empty string.** Live bug after first deploy: user fills form, clicks Save, gets `Failed to save profile`. Server log: `code: '23514', message: 'new row for relation "profiles" violates check constraint "profiles_experience_level_check"'`. Root cause: form sends `""` for an empty dropdown; CHECK constraints on `experience_level`, `remote_preference`, `work_authorization` only accept `(col IS NULL) OR (col = ANY (...))` — empty string is not in the allowed list and not null. Fix in `actions/profile.ts`: coerce `""` → `null` for all four enum columns + `years_experience` + `linkedin_url` + `portfolio_url` + `salary_expectation` + the three Education jsonb strings via the `emptyStrToNull` helper. Added a `code === '23514'` branch that surfaces a human-readable message ("One or more fields have an invalid value") instead of "Failed to save profile". Type widened: `Education.{fieldOfStudy, institutionName, graduationYear}` is now `string | null`; `lib/profile-data.ts#asEducation` returns `null` for empty jsonb values so the round-trip works.
 
 ## Current state
 
 Working:
-- `/profile` page renders end-to-end with the banner, ring (70%), missing-field tags, all five form sections, disabled extract/generate/save buttons.
-- Navbar appears exactly once on `/`, `/profile`, and any new page (rendered by `app/layout.tsx`).
-- Active-tab highlighting works — Profile tab shows `text-accent` on `/profile`, Dashboard/Find Jobs show `text-text-dark`.
-- `/callback` redirects authed users to `/profile`.
-- `npx tsc --noEmit`, `npm run lint`, `npm run build` all clean. Build output: `○ /`, `○ /_not-found`, `ƒ /callback`, `○ /login`, `ƒ /profile`, `ƒ Proxy (Middleware)`.
+- `/profile` page renders end-to-end with real DB-driven banner (completion percent, missing labels, headline swap).
+- Save button calls `saveProfile` Server Action via `useTransition`, shows inline success/error banner, auto-resets after 4s.
+- Resume PDF upload through `POST /api/resume/upload` writes to `resumes/{user_id}/resume.pdf` and persists the public URL back to `profiles.resume_pdf_url`.
+- "View current resume" link opens the just-uploaded PDF in a new tab.
+- Form pre-fills with existing profile data on every revisit (page is dynamic, server-fetches per request).
+- `useTransition` exposes `pending` for the Save button's "Saving…" label.
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` all clean. Build output: `○ /`, `○ /_not-found`, `ƒ /api/resume/upload`, `ƒ /callback`, `○ /login`, `ƒ /profile`, `ƒ Proxy (Middleware)`.
 
 Deferred (intentional, by design):
-- `actions/profile.ts` (Feature 06) — wires Save button, computes `is_complete`, uploads resume to `resumes/{user_id}/resume.pdf`.
-- `extractFromResume` flow (Feature 07) — landing in `app/api/resume/extract/route.ts` per architecture.
-- `generateResumePdf` flow (Feature 08) — landing in `app/api/resume/generate/route.ts`.
-- `/dashboard` page (Feature 14); `/callback` currently redirects to `/profile` instead.
-- `ResumePreview.tsx` (deferred — useless without saved PDF).
+- `extractFromResume` flow (Feature 07) — Extract button still disabled with Feature 07 tooltip.
+- `generateResumePdf` flow (Feature 08) — Generate button still disabled with Feature 08 tooltip.
+- `/dashboard` page (Feature 14); `/callback` currently still redirects to `/profile`.
+- `ResumePreview.tsx` — landed as a thin `<a>` link per prior memory decision.
+- `library-docs.md` InsForge DB section still shows the legacy `client.from()` pattern — needs refresh in Feature 07+.
 
 Not yet verified (deferred to later features, by design):
-- RLS exercised by a real authenticated browser round-trip.
-- PostHog events `job_search_started`, `job_found`, `profile_completed`, `company_researched` (still awaiting features 06 / 10 / 13).
+- RLS exercised by a real authenticated browser round-trip (storage RLS in particular — `storage_resumes_owner_all`).
+- `profile_completed` PostHog server event firing — requires PostHog server keys to be set; `lib/posthog-server.ts` no-ops gracefully if unset.
+- Full upsert round-trip through live InsForge backend (requires running browser session).
 
 ## Next session starts with
 
-**Feature 06 Profile Save Logic.**
+**Feature 07 AI Profile Extraction from Resume.**
 
 Before implementing:
-1. Read `context/build-plan.md` Feature 06 block (already in context).
-2. Decide whether the form should be split (Server Component with form `<form action={...}>` + Client Component for stateful bits) or stay as one Client Component calling a Server Action via `useTransition`. Lean: keep the one-component shape — it stays simple since all fields are already in client state.
-3. Confirm `actions/profile.ts` Server Action signature — single `saveProfile(formData)` vs per-section actions. Lean: single action, accepts typed `ProfileFormData` payload. Cast `work_experience` / `education` from `unknown` at the boundary (per memory decision 04).
-4. Decide required-field set for `is_complete` (Personal Info name+phone+location, Professional Info title+level+years+1 skill, Education degree+field, Preferences titles+remote preference). Count and wire.
+1. Read `context/build-plan.md` Feature 07 block.
+2. Resolve the open question about `library-docs.md` InsForge DB section (update to `client.database.from()` modern API, or leave to a separate docs-only PR).
+3. The Extract button lives on `ProfileForm.tsx` (currently disabled next to Save). `ResumeUpload` should now show a `hasResume` state so the button becomes live.
+4. Confirm whether the extract flow lives at `app/api/resume/extract/route.ts` (per architecture.md) and reads the *already-uploaded* PDF from `resumes/{user_id}/resume.pdf` rather than re-uploading. Implementation reads the file as a buffer, runs `pdf-parse`, hands extracted text to GPT-4o with a JSON schema matching `ProfileFormState`, returns the structured result, then the form applies it via setState.
+5. Confirm `openai` package is on the approved dependency list (it is — `code-standards.md` line 318). No new package install needed.
 
 Implementation order:
-1. `actions/profile.ts` — `saveProfile(data)` Server Action. Validates fields, computes `is_complete`, casts jsonb at boundary, upserts `profiles` row (PK = `user.id`), `revalidatePath('/profile')`. Return `{ success, error? }` per `code-standards.md`.
-2. `lib/completion.ts` — pure helper `calculateCompletion(profile): { percent: number; missing: string[] }`. Pure function, easy to unit test mentally. Used by page server-render + Server Action.
-3. `app/profile/page.tsx` — read profile from `profiles` table via `createInsforgeServer()`, pass real `initialEmail`/`initialFullName`/etc. to `<ProfileForm />`. Read raw `work_experience` / `education` jsonb, cast to typed shapes. Wire banner's `percent` + `missing` to real values.
-4. `components/profile/ProfileForm.tsx` — accept `initialProfile` prop instead of just email/fullName. Replace local `useState` defaults with props. Wire Save button -> Server Action via `useTransition`.
-5. `components/profile/ResumeUpload.tsx` — re-add `hasResume` prop. Wire drop zone to a new `actions/profile/uploadResume.ts` (or route handler) that pushes the PDF to `resumes/{user_id}/resume.pdf` via `insforge.storage.from('resumes').upload(..., { upsert: true })`. After upload, set `resume_pdf_url` on profile row.
-6. Wire `profile_completed` PostHog event from `actions/profile.ts` — fire only on the first save where `is_complete` flips from `false` to `true`. Per `code-standards.md` events table.
-7. Update `context/ui-registry.md` with revised `ProfileForm` (now accepts `initialProfile`) + `ResumeUpload` (with `hasResume` prop).
-8. Update `context/progress-tracker.md` with Feature 06 completion + decisions.
-9. Verify: `npx tsc --noEmit && npm run lint && npm run build`.
+1. `app/api/resume/extract/route.ts` — POST handler, server-side `getCurrentUser()`, reads file from storage using `storage.from("resumes").download(path)`, runs `pdf-parse`, returns structured `ProfileFormState` from GPT-4o. Returns `{ success, data, error? }`.
+2. Wire `Extract from Resume` button on `ProfileForm.tsx` — `useTransition` to fetch the route, applies the returned `ProfileFormState` to the relevant `useState` setters, shows loading label "Extracting…".
+3. Refine the system prompt to extract into the exact `ProfileFormState` shape (CSV strings for arrays, separate fields for work-experience arrays, plus education).
+4. Update `progress-tracker.md` + `ui-registry.md` after 07 lands.
 
-After 06 lands, Feature 07 wires the Extract button to `app/api/resume/extract/route.ts`. Feature 08 wires Generate Resume to `app/api/resume/generate/route.ts`.
+After 07 lands, Feature 08 wires Generate Resume to `app/api/resume/generate/route.ts` per architecture.md.
 
 ## Open questions
 
-- **Whether to factor `ProfileForm` to a Server Component + Client Component pair, or keep as one Client Component.** Feature 06 can land with the current shape (`useState` everywhere + Server Action via `useTransition`). Refactor later only if RSC streaming/SEO matters. Lean: defer the split.
-- **Whether `ResumePreview.tsx` belongs in 06.** Architecture lists it for the profile page. Could land as a thin "View current resume" link that opens `resume_pdf_url` in a new tab — no PDF preview component needed. Decide at Feature 06 time.
-- **PostHog runtime/attribution setup still open from prior session.** "Reopen when the first real PostHog dashboard query is needed (Feature 17)." Now three PostHog events are wired (`login_provider_selected`, `logout_requested`) but the PostHog server keys still need verification before any `profile_completed` event fires.
-- **InsForge PostgREST typability for jsonb.** Code boundaries that cast `unknown` to typed shapes arrive in Feature 06. Decide when `actions/profile.ts` first touches the cast.
-- **`/callback` -> `/profile` redirect is temporary** — needs to flip back to `/dashboard` when Feature 14 ships. Add a one-line comment at the site to flag it for future selves.
+- **`library-docs.md` InsForge DB section is outdated.** Still describes the legacy `client.from()` pattern from older docs; SDK 1.5.1 uses `client.database.from()`. Should be updated either as a docs-only change in 06 follow-up or rolled into Feature 07. Lean: 07 (next session starts there).
+- **`proxy.ts` matcher doesn't cover `/api/*`.** The `/api/resume/upload` route handler authenticates via `getCurrentUser()` server-side. Other API routes added later (Features 10/13) will need similar auth checks unless the matcher is expanded. Lean: keep proxy.ts narrow, each route handler does its own `getCurrentUser()` check. Pattern starts here.
+- **Whether Feature 07 should read the *uploaded* PDF or re-prompt upload.** The current `ResumeUpload` already uploads to `resumes/{user_id}/resume.pdf`. Feature 07's extract flow should reuse that file. Lean: read from storage; the API route just does a `download`. The Extract button does not re-trigger a file picker.
+- **PostHog event deduplication for `profile_completed`.** Resolved — fires only on the false→true flip. Safe to revisit if the schema changes.
+- **`/callback` -> `/profile` redirect is temporary** — needs to flip back to `/dashboard` when Feature 14 ships.
+- **`upsert` with `onConflict: "id"` — PostgREST API call.** Verified working at compile time, not exercised by a live round-trip yet. If the InsForge backend rejects `onConflict`, fall back to two-step (select-then-insert/update).
+- **Whether `extractFromResume` should run automatically right after upload, or only when the user clicks Extract.** Lean: only when the user clicks — keeps the surface non-surprising and matches the design text.
+- **`useTransition` + `revalidatePath` interaction.** If `revalidatePath` followed by a `pending` re-render causes layout flicker, fall back to `useActionState`. Not yet observed.

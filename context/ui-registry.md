@@ -205,12 +205,15 @@ Centered shell for login + callback routes. No nav/footer, brand logo above the 
 
 ### ProfileBanner (inline header in `app/profile/page.tsx`)
 
+File: `app/profile/page.tsx` (inline, not its own component)
+Last updated: 2026-08-01 (imprinted); rewired 2026-08-01 (Feature 06 — headline swaps between "Profile needs attention" and "Profile complete" based on `calculateCompletion(profile).isComplete`)
+
 Top-of-page "needs attention" header card. Card surface + layout. Not factored to its own component — kept inline in the page because it composes `<CompletionIndicator />` and the page-level headline.
 
 - Card: `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]`
 - Inner row: `flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between`
-- Headline: `text-xl font-semibold leading-7 text-text-primary`
-- Body: `max-w-2xl text-sm leading-5 text-text-secondary`
+- Headline: `text-xl font-semibold leading-7 text-text-primary` — text content driven by `completion.isComplete`
+- Body: `max-w-2xl text-sm leading-5 text-text-secondary` — body text swaps to "Tailored matches and resume generation are unlocked." once complete
 
 ### CompletionIndicator — `components/profile/CompletionIndicator.tsx`
 
@@ -237,9 +240,9 @@ Horizontal pill: circular ring on the left, percent + missing-field tags on the 
 ### ResumeUpload — `components/profile/ResumeUpload.tsx`
 
 File: `components/profile/ResumeUpload.tsx`
-Last updated: 2026-08-01
+Last updated: 2026-08-01 (imprinted); rewired 2026-08-01 (Feature 06 — uploads file via `useTransition` to `POST /api/resume/upload`, persists `resume_pdf_url`, "View current resume" link)
 
-Standalone section card. Drag-and-drop upload area with hidden file input, "Select Resume" button below, and a "Generate Resume from Profile" CTA in a secondary tile. Buttons are disabled tooltips at this stage — real save and PDF generation land in Feature 06 / 08.
+Standalone section card. Drag-and-drop upload area with hidden file input, "View current resume" link (when uploaded) + Generate Resume CTA in a footer row. Generate Resume stays disabled (Feature 08).
 
 | Property         | Class |
 | ---------------- | ----- |
@@ -252,26 +255,30 @@ Standalone section card. Drag-and-drop upload area with hidden file input, "Sele
 | Dropzone icon    | `h-7 w-7 text-text-muted` (upload SVG, `stroke="currentColor"`, strokeWidth 1.5) |
 | Dropzone prompt  | `text-sm font-medium text-text-primary` |
 | Dropzone hint    | `text-xs text-text-muted` |
-| Filename chip    | `mt-1 inline-flex items-center rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent` |
-| Select button    | `inline-flex items-center justify-center rounded-md bg-text-darkest px-4 py-2 text-sm font-medium text-on-dark transition-colors hover:bg-overlay` |
-| Secondary tile   | `mt-6 flex flex-col items-start justify-between gap-3 rounded-xl bg-surface-secondary p-4 sm:flex-row sm:items-center` |
+| Filename chip    | `mt-1 inline-flex items-center gap-1.5 rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent` (chip shows a spinner SVG while pending) |
+| Dropzone error   | `mt-1 text-xs font-medium text-error` (rendered under the chip when upload fails) |
+| Footer row       | `mt-4 flex items-center justify-between gap-3` |
+| Footer copy      | `text-xs text-text-muted` (left-aligned; if uploaded, contains a `text-accent` "View current resume" link with `target="_blank" rel="noopener noreferrer"`) |
 | Generate CTA     | `inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60` (disabled with title tooltipped at this stage) |
+| Pending spinner  | inline SVG `h-3 w-3 animate-spin`, `stroke="currentColor"`, `stroke-width="2"`, `fill="none"`, path draws a 270deg arc |
 
 **Pattern notes:**
-- The drag-and-drop label is a `<label>` wrapping a hidden `<input type="file">` — click anywhere in the zone opens the picker, drop events populate the filename chip only (no actual upload wiring at this stage).
-- `Generate Resume from Profile` uses the primary accent button — single CTA on the section, easy to read against the muted prompt background.
-- Tooltip copy on disabled buttons explicitly mentions the feature number (e.g. `"Generate Resume lands in Feature 08"`), so any reviewer sees the wiring gap and can find the corresponding build-plan entry.
+- The drag-and-drop label is a `<label>` wrapping a hidden `<input type="file">` — click anywhere in the zone opens the picker. Both click-to-pick and drop events run through a single `handleFile` → `useTransition` → `fetch('/api/resume/upload', { method: 'POST', body: formData })` path. No Server Action involvement — see decision in 06.
+- File input `e.target.value = ""` reset after each change — same file can be re-picked (e.g. after a failed upload) without forcing the user to rename.
+- "View current resume" is a plain `<a>` link to `resume_pdf_url` opened in a new tab — not a `ResumePreview.tsx` component. The bucket is public but path-scoped via `storage_resumes_owner_all` RLS in `architecture.md`.
+- `Generate Resume from Profile` stays disabled with `title="Generate Resume lands in Feature 08"` tooltip. Future Feature 08 will move it out of this card and into a route handler.
+- Pending state during upload: drop zone disabled (`<input disabled={pending}>`), chip shows the spinner. On success: parent `revalidatePath('/profile')` re-runs page so the just-persisted `resume_pdf_url` flows back as `resumeUrl` and the chip becomes the steady filename.
 
 ### ProfileForm — `components/profile/ProfileForm.tsx`
 
 File: `components/profile/ProfileForm.tsx`
-Last updated: 2026-08-01
+Last updated: 2026-08-01 (imprinted); rewired 2026-08-01 (Feature 06 — accepts typed `initial` ProfileFormState prop, Save button calls Server Action via `useTransition`)
 
 Single Client Component that owns all five profile sections. Internal sub-components `SectionCard`, `Field`, `TagInputField`, and `WorkRoleCard` keep the markup readable without splitting into multiple files.
 
 | Property         | Class |
 | ---------------- | ----- |
-| Form wrapper     | `flex flex-col gap-6` |
+| Form wrapper     | `flex flex-col gap-6` (with `onSubmit` preventDefault so Enter inside a field does not post) |
 | Section card     | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
 | Section header   | `mb-5 flex items-start justify-between gap-4` |
 | Section title    | `text-base font-semibold leading-6 text-text-primary` |
@@ -289,14 +296,20 @@ Single Client Component that owns all five profile sections. Internal sub-compon
 | Role card        | `rounded-xl border border-border-light bg-surface-secondary p-4` |
 | Role index label | `text-xs font-semibold uppercase tracking-wide text-text-muted` |
 | Remove role link | `text-xs font-medium text-text-secondary hover:text-error` |
-| Save + Extract row | `flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between` — Extract secondary (`disabled`, tooltipped) + Save primary (`bg-accent ... text-accent-foreground ... disabled:opacity-60`, `sm:w-auto`) |
+| Empty roles state | `rounded-md border border-dashed border-border-light bg-surface-secondary px-4 py-6 text-center text-sm text-text-muted` |
 | Date grid        | `grid grid-cols-1 gap-3 sm:grid-cols-2` |
 | Checkbox label   | `inline-flex items-center gap-2 text-sm text-text-primary` |
 | Checkbox control | `h-4 w-4 rounded border-border text-accent focus:ring-accent` |
+| Action stack wrapper | `flex flex-col gap-3` (banner above the Save/Extract row) |
+| Saved success banner | `rounded-md border border-success-lightest bg-success-lightest px-4 py-2.5 text-sm font-medium text-success-foreground` (`role="status"`) |
+| Error banner    | `rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error` (`role="alert"`) |
+| Save + Extract row | `flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between` — Extract secondary (`disabled`, tooltipped) + Save primary (`bg-accent ... text-accent-foreground ... hover:bg-accent-dark ... disabled:opacity-60`, `sm:w-auto`, label toggles to "Saving…" while pending) |
 
 **Pattern notes:**
+- `Props` now takes `initial: ProfileFormState` from `types/index.ts` (typed CSV-string shape for the four array fields). The page server-renders the typed `initial` by reading `profiles` via `fetchProfile()` in `lib/profile-data.ts` and joins array fields with `", "` before they reach the form.
 - All five sections share the same `SectionCard` shell so the page reads as a stack of equivalent cards, matching the homepage card precedent.
 - Tag chips use the same `bg-accent-muted text-accent` token as the missing-field tags in `CompletionIndicator` — skills look like missing-fields when the list is empty. Industries use `bg-info-lightest text-info-foreground` to differentiate the optional field visually without adding a new color.
-- Work-role checkbox is bound to `current`. When `current` flips to `true`, `endDate` is cleared and the End Date input becomes `disabled` with `bg-surface-secondary text-text-muted`.
-- The Save and Extract buttons are intentionally disabled with tooltip text pointing at feature numbers (06, 07, 08). Users can fill the form freely; nothing happens on click yet.
-- Email field is `disabled` — server pre-fills it from `getCurrentUser()` in `app/profile/page.tsx`. This wires one of the open questions from memory (`ProfileForm` pre-fills email from session in 05).
+- Work-role checkbox is bound to `current`. When `current` flips to `true`, `endDate` is cleared and the End Date input becomes `disabled` with `bg-surface-secondary text-text-muted`. When `current` is `false`, `endDate` is preserved in the local state during the toggle.
+- The Save button calls `saveProfile(input)` from `actions/profile.ts` via `useTransition`. The button's label flips to `"Saving…"` while `pending === true`. Status transitions to `"saved"` (success banner, auto-resets to idle after 4s) or `"error"` (error banner with message from Server Action). Server Action calls `revalidatePath("/profile")` so the page re-renders with fresh server data on the next request.
+- The Extract button stays disabled with `title="Extract from Resume lands in Feature 07"` — Feature 07 owns that wiring.
+- Email field is `disabled` — server pre-fills it from `profile.email` (which itself fell back to `user.email`) in `app/profile/page.tsx`.
