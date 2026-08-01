@@ -272,7 +272,7 @@ Standalone section card. Drag-and-drop upload area with hidden file input, "View
 ### ProfileForm — `components/profile/ProfileForm.tsx`
 
 File: `components/profile/ProfileForm.tsx`
-Last updated: 2026-08-01 (imprinted); rewired 2026-08-01 (Feature 06 — accepts typed `initial` ProfileFormState prop, Save button calls Server Action via `useTransition`)
+Last updated: 2026-08-01 (imprinted); rewired 2026-08-01 (Feature 06 — accepts typed `initial` ProfileFormState prop, Save button calls Server Action via `useTransition`); rewired 2026-08-02 (Feature 07 — Extract from Resume button is live, auto-fills all fields from GPT extraction)
 
 Single Client Component that owns all five profile sections. Internal sub-components `SectionCard`, `Field`, `TagInputField`, and `WorkRoleCard` keep the markup readable without splitting into multiple files.
 
@@ -301,9 +301,10 @@ Single Client Component that owns all five profile sections. Internal sub-compon
 | Checkbox label   | `inline-flex items-center gap-2 text-sm text-text-primary` |
 | Checkbox control | `h-4 w-4 rounded border-border text-accent focus:ring-accent` |
 | Action stack wrapper | `flex flex-col gap-3` (banner above the Save/Extract row) |
-| Saved success banner | `rounded-md border border-success-lightest bg-success-lightest px-4 py-2.5 text-sm font-medium text-success-foreground` (`role="status"`) |
-| Error banner    | `rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error` (`role="alert"`) |
-| Save + Extract row | `flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between` — Extract secondary (`disabled`, tooltipped) + Save primary (`bg-accent ... text-accent-foreground ... hover:bg-accent-dark ... disabled:opacity-60`, `sm:w-auto`, label toggles to "Saving…" while pending) |
+| Saved success banner | `rounded-md border border-success-lightest bg-success-lightest px-4 py-2.5 text-sm font-medium text-success-foreground` (`role="status"`, auto-resets to `idle` after 4s) |
+| Extract success banner | `rounded-md border border-success bg-surface px-4 py-2.5 text-sm font-medium text-success` (`role="status"`, `border-success`/`text-success` tokens, shows "Extracted N fields…") |
+| Error banner    | `rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error` (`role="alert"`) — shared shape for Save errors and Extract errors (separate state slots) |
+| Save + Extract row | `flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between` — Extract secondary (`onClick={handleExtract}`, label "Extract from Resume" → "Extracting…" on `extractPending`, `disabled:cursor-not-allowed disabled:opacity-60`) gated on `hasResume`, else the muted helper span + Save primary (`bg-accent ... text-accent-foreground ... hover:bg-accent-dark ... disabled:opacity-60`, `sm:w-auto`, label toggles to "Saving…" while `pending`) |
 
 **Pattern notes:**
 - `Props` now takes `initial: ProfileFormState` from `types/index.ts` (typed CSV-string shape for the four array fields). The page server-renders the typed `initial` by reading `profiles` via `fetchProfile()` in `lib/profile-data.ts` and joins array fields with `", "` before they reach the form.
@@ -312,4 +313,5 @@ Single Client Component that owns all five profile sections. Internal sub-compon
 - Work-role checkbox is bound to `current`. When `current` flips to `true`, `endDate` is cleared and the End Date input becomes `disabled` with `bg-surface-secondary text-text-muted`. When `current` is `false`, `endDate` is preserved in the local state during the toggle.
 - The Save button calls `saveProfile(input)` from `actions/profile.ts` via `useTransition`. The button's label flips to `"Saving…"` while `pending === true`. Status transitions to `"saved"` (success banner, auto-resets to idle after 4s) or `"error"` (error banner with message from Server Action). Server Action calls `revalidatePath("/profile")` so the page re-renders with fresh server data on the next request.
 - The Extract button stays disabled with `title="Extract from Resume lands in Feature 07"` — Feature 07 owns that wiring.
+- **Feature 07 wiring (2026-08-02):** Extract button is now live. `onClick={handleExtract}` fires `POST /api/resume/extract` via a second `useTransition` (`extractPending`); label flips "Extract from Resume" → "Extracting…". On success each returned field is spread into its `useState` setter (extracted-wins, absent-keeps-existing); a green "Extracted N fields…" banner confirms and the Save banner is reset to `idle` so the two statuses never collide. Extract errors (`extractStatus === "error"`) use the same banner visual as Save errors but a separate state/message slot. Extract does NOT call `saveProfile` — the user explicitly clicks Save Profile after reviewing.
 - Email field is `disabled` — server pre-fills it from `profile.email` (which itself fell back to `user.email`) in `app/profile/page.tsx`.

@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 2 — Profile Page
-**Last completed:** 06 Profile Save Logic
-**Next:** 07 AI Profile Extraction from Resume
+**Last completed:** 07 AI Profile Extraction from Resume
+**Next:** 08 Resume PDF Generation from Profile
 
 ---
 
@@ -25,7 +25,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
-- [ ] 07 AI Profile Extraction from Resume
+- [x] 07 AI Profile Extraction from Resume
 - [ ] 08 Resume PDF Generation from Profile
 
 ### Phase 3 — Find Jobs Page
@@ -68,6 +68,19 @@ Update this file after every completed feature. Any AI agent reading this should
 - **Empty Work Experience list renders an empty-state card** ("No work experience added yet. Click 'Add role' to record one." with a dashed border). Feature 05's mock seeded a filled role; on a fresh profile the form starts with no roles so the user clicks `Add role` deliberately. Same UX as the existing chip lists when empty.
 - **`work_experience` `endDate` is cleared when `current === true` server-side.** The Server Action maps `r.current ? "" : r.endDate` before upsert so the column is consistent regardless of what the client has in state. Local form state still preserves the prior value so toggling off `current` restores it.
 - **All Save / Extract / Generate buttons handle future features correctly.** Save is wired (06). Extract stays disabled with `title="Extract from Resume lands in Feature 07"` — Feature 07 owns that wiring. Generate Resume from Profile stays disabled with `title="Generate Resume lands in Feature 08"`.
+
+### 07 AI Profile Extraction from Resume
+
+- **`pdf-parse@2.x` is a breaking rewrite — the v1 `import pdf from "pdf-parse"; pdf(buffer)` default export no longer exists.** The installed version is `2.4.5` (class-based). Pattern: `import { PDFParse } from "pdf-parse"` → `const parser = new PDFParse({ data: new Uint8Array(buffer) })` → `const result = await parser.getText()` → `await parser.destroy()` . `result.text` is the concatenated plain text. Resolved the open question from the prior memory about v1 `pdf(buffer)` — it is moot. `library-docs.md` pdf-parse section updated to v2.
+- **Extract route is `app/api/resume/extract/route.ts` POST.** Route Handler, not Server Action — mirrors the upload route decision (06) and keeps heavy AI + PDF work off the action surface. Auth via `getCurrentUser()` server-side (`proxy.ts` matcher excludes `/api/*`).
+- **Resume is read from storage, NOT re-uploaded.** The route downloads the already-uploaded PDF at `resumes/{userId}/resume.pdf` (the `resumes/` bucket prefix rule from 06 applies) via `insforge.storage.from("resumes").download(path)`. Returns `{ data: Blob | null, error }` (verified in `node_modules/@insforge/sdk/dist/client-BS9Xf-qE.d.ts:530`). Blob → Buffer via `Buffer.from(await blob.arrayBuffer())`, then to `Uint8Array` for `PDFParse`.
+- **Empty / image-only PDF handling returns HTTP 200 + `success: false`.** `pdf-parse` returns empty/short text for image-based PDFs. If trimmed `text` < 50 chars, the route returns `{ success: false, error: "Could not extract text from this PDF. It may be an image-only document — please upload a text-based resume." }`. A 200 (not 422/500) — it is a user-input quality issue, not a server fault. The browser surfaces it in the existing extract error banner. A genuine parse failure (worker crash) returns 422.
+- **GPT-4o call: `response_format: { type: "json_object" }`, `temperature: 0.3`, `max_tokens: 800`.** Matches `library-docs.md` ("Profile extraction from resume: 800" + extraction on the 0.3 deterministic row). Resume text is truncated to 12,000 chars before the prompt to keep prompt + completion within `gpt-4o` context headroom.
+- **System prompt enumerates the exact `ProfileFormState` schema with enum value lists.** Lives in `lib/profile-extract.ts` as `EXTRACT_SYSTEM_PROMPT`. GPT must omit missing fields (never null / empty strings), infer `experienceLevel` from total years (junior 0-2 / mid 3-6 / senior 7-10 / lead 11+), normalise dates to `YYYY-MM`, map degree abbreviations to the enum, and cap work experience at the 3 most recent roles.
+- **No Zod — manual `unknown` narrowing per `code-standards.md`.** `buildExtractedProfile(raw)` in `lib/profile-extract.ts` returns `Partial<ProfileFormState>` by narrow-checking each field and dropping anything malformed. Zod was considered (lean in prior memory: keep DB CHECK as single source) and rejected to avoid a new dependency + keep validation logic auditable in plain TS.
+- **Extracted JSON auto-fills the form (overwrite-where-extracted-wins), the user still clicks Save.** The Extract route does NOT call `saveProfile`. On success the browser spreads each returned field into its `useState` setter (value present → setter called; absent → existing value kept). A green "Extracted N fields from your resume — review and click Save Profile." banner confirms. Save keeps its own separate 4s auto-reset banner.
+- **Two independent statuses on the form.** `status` (Save: idle/saving/saved/error) and `extractStatus` (idle/extracting/error/idle-with-result) are separate pieces of state so an in-flight extract never disturbs the Save banner. Extract uses its own `useTransition` (`extractPending`) and its own error message slot.
+- **Extract button gated on `hasResume` (unchanged from 06).** Reads "Extract from Resume" / "Extracting…" while pending. Disabled state removed — the Feature 07 placeholder tooltip is gone.
 
 ### 05 Profile Page — Full UI
 

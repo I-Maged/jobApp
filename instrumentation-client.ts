@@ -7,6 +7,11 @@ if (token && host) {
   posthog.init(token, {
     api_host: host,
     capture_exceptions: true,
+    // Scroll-depth tracking has no use on JobPilot's fixed-height nav pages,
+    // and PostHog's ratio clamp ("cannot be greater than max: 1") fires the
+    // warning on every pageleave where early scroll context exceeds a near-
+    // zero maxScrollHeight. Turn the computation off entirely.
+    disable_scroll_properties: true,
     debug: process.env.NODE_ENV === "development",
   });
 } else if (process.env.NODE_ENV === "development") {

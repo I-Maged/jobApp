@@ -42,15 +42,21 @@ export async function POST(req: Request) {
       );
     }
 
-    const path = `${user.id}/resume.pdf`;
+    const path = `resumes/${user.id}/resume.pdf`;
     const { error: uploadErr } = await insforge.storage
       .from("resumes")
       .upload(path, file);
     if (uploadErr) {
       console.error("[api/resume/upload] storage upload", uploadErr);
+      const status =
+        (uploadErr as { statusCode?: number }).statusCode === 403 ? 403 : 500;
       return NextResponse.json(
-        { success: false, error: "Failed to upload resume" },
-        { status: 500 },
+        {
+          success: false,
+          error: "Failed to upload resume",
+          code: (uploadErr as { code?: string }).code,
+        },
+        { status },
       );
     }
 

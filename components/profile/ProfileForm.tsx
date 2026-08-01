@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { saveProfile } from "@/actions/profile";
+import type { ExtractedProfile } from "@/lib/profile-extract";
 import type {
   ExperienceLevel,
   HighestDegree,
@@ -20,6 +21,7 @@ type Props = {
 const MAX_WORK_ROLES = 3;
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+type ExtractStatus = "idle" | "extracting" | "error";
 
 function generateRoleId(): string {
   return `role-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -73,11 +75,22 @@ export function ProfileForm({ initialEmail, initial, hasResume }: Props) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [extractPending, startExtractTransition] = useTransition();
+  const [extractStatus, setExtractStatus] = useState<ExtractStatus>("idle");
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [extractedFields, setExtractedFields] = useState<string[] | null>(null);
+
   useEffect(() => {
     if (status !== "saved") return;
     const timeout = window.setTimeout(() => setStatus("idle"), 4000);
     return () => window.clearTimeout(timeout);
   }, [status]);
+
+  useEffect(() => {
+    if (extractStatus !== "extracting") return;
+    const timeout = window.setTimeout(() => setExtractStatus("idle"), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [extractStatus]);
 
   const addSkill = () => {
     const trimmed = skillInput.trim();
@@ -123,6 +136,69 @@ export function ProfileForm({ initialEmail, initial, hasResume }: Props) {
 
   const updateRole = (id: string, patch: Partial<WorkExperienceRole>) => {
     setRoles(roles.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+
+  const handleExtract = () => {
+    setExtractError(null);
+    setExtractedFields(null);
+    setExtractStatus("extracting");
+    startExtractTransition(async () => {
+      try {
+        const res = await fetch("/api/resume/extract", { method: "POST" });
+        const json = (await res.json()) as {
+          success: boolean;
+          error?: string;
+          profile?: ExtractedProfile;
+        };
+        if (!res.ok || !json.success) {
+          setExtractStatus("error");
+          setExtractError(json.error ?? "Extraction failed");
+          return;
+        }
+        const p = json.profile ?? {};
+        if (typeof p.fullName === "string" && p.fullName) setFullName(p.fullName);
+        if (typeof p.phone === "string" && p.phone) setPhone(p.phone);
+        if (typeof p.location === "string" && p.location) setLocation(p.location);
+        if (typeof p.linkedinUrl === "string" && p.linkedinUrl)
+          setLinkedinUrl(p.linkedinUrl);
+        if (typeof p.portfolioUrl === "string" && p.portfolioUrl)
+          setPortfolioUrl(p.portfolioUrl);
+        if (p.workAuthorization) setWorkAuthorization(p.workAuthorization);
+        if (typeof p.currentTitle === "string" && p.currentTitle)
+          setCurrentTitle(p.currentTitle);
+        if (p.experienceLevel) setExperienceLevel(p.experienceLevel);
+        if (typeof p.yearsExperience === "string" && p.yearsExperience)
+          setYearsExperience(p.yearsExperience);
+        if (typeof p.skillsCsv === "string" && p.skillsCsv)
+          setSkills(csvToArr(p.skillsCsv));
+        if (typeof p.industriesCsv === "string" && p.industriesCsv)
+          setIndustries(csvToArr(p.industriesCsv));
+        if (Array.isArray(p.workExperience) && p.workExperience.length > 0)
+          setRoles(p.workExperience);
+        if (p.highestDegree) setHighestDegree(p.highestDegree);
+        if (typeof p.fieldOfStudy === "string" && p.fieldOfStudy)
+          setFieldOfStudy(p.fieldOfStudy);
+        if (typeof p.institutionName === "string" && p.institutionName)
+          setInstitutionName(p.institutionName);
+        if (typeof p.graduationYear === "string" && p.graduationYear)
+          setGraduationYear(p.graduationYear);
+        if (typeof p.jobTitlesSeekingCsv === "string" &&
+          p.jobTitlesSeekingCsv)
+          setTitlesSeeking(p.jobTitlesSeekingCsv);
+        if (p.remotePreference) setRemotePreference(p.remotePreference);
+        if (typeof p.salaryExpectation === "string" && p.salaryExpectation)
+          setSalaryExpectation(p.salaryExpectation);
+        if (typeof p.preferredLocationsCsv === "string" &&
+          p.preferredLocationsCsv)
+          setPreferredLocations(p.preferredLocationsCsv);
+        setExtractedFields(Object.keys(p));
+        setStatus("idle");
+      } catch (err) {
+        console.error("[components/profile/ProfileForm] extract", err);
+        setExtractStatus("error");
+        setExtractError("Extraction failed. Please try again.");
+      }
+    });
   };
 
   const handleSave = () => {
@@ -432,15 +508,33 @@ export function ProfileForm({ initialEmail, initial, hasResume }: Props) {
             {errorMessage}
           </div>
         ) : null}
+        {extractStatus === "error" && extractError ? (
+          <div
+            role="alert"
+            className="rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error"
+          >
+            {extractError}
+          </div>
+        ) : null}
+        {extractStatus === "idle" && extractedFields ? (
+          <div
+            role="status"
+            className="rounded-md border border-success bg-surface px-4 py-2.5 text-sm font-medium text-success"
+          >
+            Extracted {extractedFields.length} field
+            {extractedFields.length === 1 ? "" : "s"} from your resume — review
+            and click Save Profile.
+          </div>
+        ) : null}
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           {hasResume ? (
             <button
               type="button"
-              disabled
-              title="Extract from Resume lands in Feature 07"
+              onClick={handleExtract}
+              disabled={extractPending}
               className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Extract from Resume
+              {extractPending ? "Extracting…" : "Extract from Resume"}
             </button>
           ) : (
             <span className="text-xs text-text-muted">Upload a resume above to enable extraction.</span>

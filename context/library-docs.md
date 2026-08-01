@@ -95,25 +95,30 @@ if (!user) redirect("/login");
 
 ```typescript
 // Read
-const { data, error } = await insforge
+const { data, error } = await insforge.database
   .from("jobs")
   .select("*")
   .eq("user_id", user.id)
   .order("found_at", { ascending: false });
 
 // Insert
-const { data, error } = await insforge
+const { data, error } = await insforge.database
   .from("jobs")
-  .insert({ user_id: user.id, title, company, match_score })
+  .insert([{ user_id: user.id, title, company, match_score }])
   .select()
   .single();
 
 // Update
-const { error } = await insforge
+const { error } = await insforge.database
   .from("jobs")
   .update({ company_research: dossier })
   .eq("id", jobId)
   .eq("user_id", user.id); // always scope to user
+
+// Upsert
+const { error } = await insforge.database
+  .from("profiles")
+  .upsert(row, { onConflict: "id" });
 ```
 
 **Rules:**
@@ -127,31 +132,35 @@ const { error } = await insforge
 ### Storage
 
 ```typescript
-// Upload file
+// Upload file (2-arg — PUT overwrites existing key; no options object)
 const { data, error } = await insforge.storage
   .from("resumes")
-  .upload(`${userId}/resume.pdf`, fileBuffer, {
-    contentType: "application/pdf",
-    upsert: true, // overwrites existing file
-  });
+  .upload(`resumes/${userId}/resume.pdf`, file);
 
-// Get public URL
+// Download file (returns { data: Blob | null, error: InsForgeError | null })
+const { data: blob, error } = await insforge.storage
+  .from("resumes")
+  .download(`resumes/${userId}/resume.pdf`);
+const arrayBuffer = await blob!.arrayBuffer();
+
+// Get public URL (pure string construction — no network call)
 const { data } = insforge.storage
   .from("resumes")
-  .getPublicUrl(`${userId}/resume.pdf`);
+  .getPublicUrl(`resumes/${userId}/resume.pdf`);
 
 const url = data.publicUrl;
 ```
 
 **Storage paths:**
 
-- Base resume: `resumes/{user_id}/resume.pdf`
+- Base resume: `resumes/{user_id}/resume.pdf` — keys MUST include the `resumes/` bucket prefix
 
 **Rules:**
 
-- Always use `upsert: true` for base resume uploads — overwrites existing file
+- `upload(path, file)` is 2-arg — uploading to an existing key overwrites it (PUT semantics); there is no `upsert` or `contentType` option
+- `download(path)` returns a `Blob` — convert to `Buffer` via `Buffer.from(await blob.arrayBuffer())`
 - Always save the public URL back to the DB after upload
-- Never write files to disk — always upload buffer directly to storage
+- Never write files to disk — always upload the File/Blob directly to storage
 
 ---
 
@@ -702,26 +711,24 @@ Only use these — others are silently ignored:
 
 ### Extract Text from Uploaded Resume
 
+`pdf-parse@2.x` is a full rewrite — the v1 `import pdf from "pdf-parse"; pdf(buffer)` default export no longer exists. The v2 API is class-based.
+
 ```typescript
-import pdf from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 
-// In API route handling resume upload
-export async function POST(req: NextRequest) {
-  const formData = await req.formData();
-  const file = formData.get("resume") as File;
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+// In API route — after downloading the resume via insforge.storage.download(path)
+const parser = new PDFParse({ data: new Uint8Array(buffer) });
+const textResult = await parser.getText();
+await parser.destroy(); // free the worker
 
-  const pdfData = await pdf(buffer);
-  const extractedText = pdfData.text; // raw text content
-
-  // Send to GPT-4o for structured extraction
-}
+const extractedText = textResult.text; // concatenated plain text from all pages
 ```
 
 **Rules:**
 
 - Server-side only — never import in client components
-- `pdfData.text` is raw unformatted text — GPT-4o handles the structure extraction
+- `new PDFParse({ data })` accepts a `Uint8Array` (convert a `Buffer` via `new Uint8Array(buffer)`) — do NOT pass the `Buffer` directly
+- `parser.getText()` returns a `TextResult` with `.text` (concatenated) and `.pages` (per-page `PageTextResult[]`) — use `.text` for full-document extraction
+- Always call `await parser.destroy()` after use to release the pdfjs worker
 - Always handle parse errors — some PDFs are image-based and return empty text
-- If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+- If `textResult.text` is empty or very short (< 50 chars trimmed) — return a user-facing message: "Could not extract text from this PDF. It may be an image-only document — please upload a text-based resume." (HTTP 200 with `success: false`)
