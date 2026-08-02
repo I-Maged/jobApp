@@ -659,7 +659,7 @@ export const createPostHogServer = () =>
 
 ```typescript
 import { renderToBuffer } from '@react-pdf/renderer'
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer'
 
 const styles = StyleSheet.create({
   page: { padding: 30, fontFamily: 'Helvetica' },
@@ -682,18 +682,15 @@ const ResumePDF = ({ profile }: { profile: Profile }) => (
 // Generate buffer
 const buffer = await renderToBuffer(<ResumePDF profile={profile} />)
 
-// Upload directly to InsForge Storage
+// Upload directly to InsForge Storage (replace-on-same-key is built in —
+// no contentType/upsert options exist on upload())
 await insforge.storage
   .from('resumes')
-  .upload(`${userId}/resume.pdf`, buffer, {
-    contentType: 'application/pdf',
-    upsert: true
-  })
+  .upload(`${userId}/resume.pdf`, new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }))
 ```
 
-**Supported CSS properties:**
-Only use these — others are silently ignored:
-`padding, margin, fontSize, color, fontFamily, flexDirection, alignItems, justifyContent, borderRadius, width, height, fontWeight, textAlign, lineHeight`
+**Supported CSS properties (verified against v4.5.1):**
+`padding, margin (incl. marginTop/Left/Right/Bottom), paddingHorizontal/Vertical, fontSize, color, fontFamily, flexDirection, alignItems, justifyContent, borderRadius, width, height, fontWeight, textAlign, lineHeight, backgroundColor, gap, textTransform, letterSpacing, textIndent`
 
 **Rules:**
 

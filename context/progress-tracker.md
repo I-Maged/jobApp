@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 2 — Profile Page
-**Last completed:** 07 AI Profile Extraction from Resume
-**Next:** 08 Resume PDF Generation from Profile
+**Last completed:** 08 Resume PDF Generation from Profile
+**Next:** 09 Find Jobs Page — Full UI
 
 ---
 
@@ -26,7 +26,7 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
 - [x] 07 AI Profile Extraction from Resume
-- [ ] 08 Resume PDF Generation from Profile
+- [x] 08 Resume PDF Generation from Profile
 
 ### Phase 3 — Find Jobs Page
 
@@ -81,6 +81,18 @@ Update this file after every completed feature. Any AI agent reading this should
 - **Extracted JSON auto-fills the form (overwrite-where-extracted-wins), the user still clicks Save.** The Extract route does NOT call `saveProfile`. On success the browser spreads each returned field into its `useState` setter (value present → setter called; absent → existing value kept). A green "Extracted N fields from your resume — review and click Save Profile." banner confirms. Save keeps its own separate 4s auto-reset banner.
 - **Two independent statuses on the form.** `status` (Save: idle/saving/saved/error) and `extractStatus` (idle/extracting/error/idle-with-result) are separate pieces of state so an in-flight extract never disturbs the Save banner. Extract uses its own `useTransition` (`extractPending`) and its own error message slot.
 - **Extract button gated on `hasResume` (unchanged from 06).** Reads "Extract from Resume" / "Extracting…" while pending. Disabled state removed — the Feature 07 placeholder tooltip is gone.
+
+### 08 Resume PDF Generation from Profile
+
+- **Generate route is `app/api/resume/generate/route.tsx` POST** — `.tsx`, not `.ts`. It calls `renderToBuffer(<ResumeTemplate ... />)`, so it must be a JSX file. Auth via `getCurrentUser()`; profile read from DB via `fetchProfile(user.id)` (never a client-submitted payload — the client POSTs an empty body).
+- **JSX construction hoisted into a module-level `buildResumeElement(profile, content)` helper.** The `react-hooks/error-boundaries` lint rule fires on JSX *constructed inside* try/catch. Building the element in a helper outside the try block satisfies the rule while the async `renderToBuffer()` call stays inside the try.
+- **Split of responsibilities: GPT-4o writes content, `ResumeTemplate` renders layout.** `lib/resume-generate.ts` → `generateResumeContent(profile): Promise<ResumeContent>` — GPT-4o (`response_format: json_object`, `temperature: 0.7`, `max_tokens: 1000`) produces `{ summary, experience[{...bullets}], skills }` — the professionally-worded text. The PDF component renders contact info, education, and fixed layout directly from the `Profile` row. GPT never sees contact fields; it only rewrites narrative content.
+- **`@react-pdf/renderer` v4.5.1 — `renderToBuffer` is the only entry point.** No `renderToStream`, no `PDFDownloadLink`, never imported in client components. `renderToBuffer()` returns `Buffer`; the InsForge Storage `.upload()` takes `File | Blob`, so the route wraps it as `new Blob([new Uint8Array(buffer)], { type: "application/pdf" })` (the raw Buffer is not a valid `BlobPart` under the TS 5.9 `ArrayBufferLike` narrowing).
+- **Storage upload matches SDK 1.5.1 — no options object.** `insforge.storage.from("resumes").upload(path, blob)` — the third `{ contentType, upsert }` argument from the old `library-docs.md` example does not exist in the SDK (verified against fetched SDK docs). Uploading to the existing key `resumes/{userId}/resume.pdf` replaces in place. Public URL via `getPublicUrl(path).data.publicUrl`, then `database.from("profiles").update({ resume_pdf_url }).eq("id", user.id)`.
+- **No profile-completeness gate.** A thin profile produces a thin resume — GPT generates whatever it can from whatever fields exist. The empty case (no profile row) still returns 400.
+- **Generate button lives in `ResumeUpload.tsx` and is now live.** Third `useTransition` (`generatePending`) + `generateStatus` (`idle | generating | generated | error`) + `generatedUrl` local state. On success the component swaps `resumeUrl` → `generatedUrl` locally so "View current resume" updates immediately without a page reload; the DB write is what persists it for the next visit. Button labels: "Generating…" / "Resume Generated" (disabled) / error message in the existing `error` slot.
+- **Inter font loaded at render time from Google Fonts.** `Font.register` in `ResumeTemplate.tsx` uses the Inter v20 latin variable-font URL (`fonts.gstatic.com/s/inter/v20/...UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2`) for both 400 and 700 (single variable-font file covers both weights). The v18 URLs originally written 404'd — verified via fetch before wiring. The renderer fetches the font at render time (same runtime network dependency as the GPT-4o call), so no bundling concern. **If the v20 URL ever 404s, generation fails — check Google Fonts CSS (`css2?family=Inter:wght@400;700`) for the current hash before changing anything else.**
+- **Template CSS props verified against installed v4.5.1** — `backgroundColor`, `gap`, `textTransform`, `letterSpacing`, `textIndent`, margin/padding shorthands all exist in `@react-pdf/stylesheet` types (the conservative list in `library-docs.md` was incomplete). `library-docs.md` @react-pdf section updated with the verified list and corrected `.upload()` signature.
 
 ### 05 Profile Page — Full UI
 

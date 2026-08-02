@@ -240,9 +240,9 @@ Horizontal pill: circular ring on the left, percent + missing-field tags on the 
 ### ResumeUpload — `components/profile/ResumeUpload.tsx`
 
 File: `components/profile/ResumeUpload.tsx`
-Last updated: 2026-08-01 (imprinted); rewired 2026-08-01 (Feature 06 — uploads file via `useTransition` to `POST /api/resume/upload`, persists `resume_pdf_url`, "View current resume" link)
+Last updated: 2026-08-02 (Feature 08 — Generate Resume button live; `generatePending`/`generateStatus`/`generatedUrl` state; local `generatedUrl` overrides the `resumeUrl` prop so "View current resume" updates without a reload)
 
-Standalone section card. Drag-and-drop upload area with hidden file input, "View current resume" link (when uploaded) + Generate Resume CTA in a footer row. Generate Resume stays disabled (Feature 08).
+Standalone section card. Drag-and-drop upload area with hidden file input, "View current resume" link (when uploaded) + Generate Resume CTA in a footer row. Generate Resume is live in Feature 08 — POSTs to `/api/resume/generate` with an empty body.
 
 | Property         | Class |
 | ---------------- | ----- |
@@ -259,15 +259,28 @@ Standalone section card. Drag-and-drop upload area with hidden file input, "View
 | Dropzone error   | `mt-1 text-xs font-medium text-error` (rendered under the chip when upload fails) |
 | Footer row       | `mt-4 flex items-center justify-between gap-3` |
 | Footer copy      | `text-xs text-text-muted` (left-aligned; if uploaded, contains a `text-accent` "View current resume" link with `target="_blank" rel="noopener noreferrer"`) |
-| Generate CTA     | `inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60` (disabled with title tooltipped at this stage) |
+| Generate CTA     | `inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60` (live; disabled while `generatePending` or after `generated`; label swaps "Generating…" / "Resume Generated") |
 | Pending spinner  | inline SVG `h-3 w-3 animate-spin`, `stroke="currentColor"`, `stroke-width="2"`, `fill="none"`, path draws a 270deg arc |
 
 **Pattern notes:**
 - The drag-and-drop label is a `<label>` wrapping a hidden `<input type="file">` — click anywhere in the zone opens the picker. Both click-to-pick and drop events run through a single `handleFile` → `useTransition` → `fetch('/api/resume/upload', { method: 'POST', body: formData })` path. No Server Action involvement — see decision in 06.
 - File input `e.target.value = ""` reset after each change — same file can be re-picked (e.g. after a failed upload) without forcing the user to rename.
 - "View current resume" is a plain `<a>` link to `resume_pdf_url` opened in a new tab — not a `ResumePreview.tsx` component. The bucket is public but path-scoped via `storage_resumes_owner_all` RLS in `architecture.md`.
-- `Generate Resume from Profile` stays disabled with `title="Generate Resume lands in Feature 08"` tooltip. Future Feature 08 will move it out of this card and into a route handler.
+- `Generate Resume from Profile` is live (Feature 08). `handleGenerate` runs its own `useTransition` and POSTs an empty body to `/api/resume/generate`; on success `generatedUrl` state overrides the `resumeUrl` prop so the footer link updates immediately. The DB write persists it for the next page load.
 - Pending state during upload: drop zone disabled (`<input disabled={pending}>`), chip shows the spinner. On success: parent `revalidatePath('/profile')` re-runs page so the just-persisted `resume_pdf_url` flows back as `resumeUrl` and the chip becomes the steady filename.
+
+### ResumeTemplate — `components/profile/ResumeTemplate.tsx`
+
+File: `components/profile/ResumeTemplate.tsx`
+Last updated: 2026-08-02 (Feature 08 — PDF Document template)
+
+Server-side-only `@react-pdf/renderer` document. **Not a Tailwind component** — styling is `StyleSheet.create` props (verified against v4.5.1: padding/margin, fontSize, color, fontFamily, flexDirection, fontWeight, textAlign, lineHeight, backgroundColor, gap, textTransform, letterSpacing, textIndent). Never imported in client components.
+
+- `Document` → single `Page size="A4"` (padding 48, `fontFamily: "Inter"`, fontSize 11)
+- Header: centered full name (22, bold) + contact row (email/phone/location/LinkedIn/portfolio, 9pt, muted, joined with gaps)
+- Sections each preceded by a 1px `#e5e7eb` divider: Professional Summary (accent, uppercase, letterSpacing 1.5), Professional Experience (role title bold + company ` | ` + date range), Skills (chips, `#f3f4f6` bg), Education (degree/field `~` institution, `,` year)
+- Inter 400/700 registered at module scope from the Google Fonts v20 latin variable-font URL (`fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2`)
+- Props: `{ profile: Profile, summary: string, experience: Array<{company, title, startDate, endDate, current, bullets}> , resumeSkills: string[] }`
 
 ### ProfileForm — `components/profile/ProfileForm.tsx`
 
