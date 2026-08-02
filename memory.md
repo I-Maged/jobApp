@@ -1,48 +1,50 @@
-# Memory — Feature 08 Resume PDF Generation from Profile
+# Memory — Feature 09 Find Jobs Page — Full UI
 
-Last updated: 2026-08-02
+Last updated: 2026-08-03
 
 ## What was built
 
-### Feature 08 — Resume PDF Generation from Profile
+### Feature 09 — Find Jobs Page — Full UI (static shell, no live logic)
 
-- **`lib/resume-generate.ts`** — new file. Exports `ResumeContent` type (`{ summary, experience[{company, title, startDate, endDate, current, bullets[]}], skills[] }`) and `generateResumeContent(profile: Profile): Promise<ResumeContent>` — GPT-4o call (`response_format: json_object`, `temperature: 0.7`, `max_tokens: 1000`) with a resume-writer system prompt. The model only writes narrative content (summary, polished bullets, skill ordering) from workExperience/education/skills — it never sees contact fields. Manual `unknown` narrowing on the response, no Zod.
-- **`components/profile/ResumeTemplate.tsx`** — new file. `@react-pdf/renderer` v4.5.1 `Document` component (A4, `StyleSheet.create`, Inter font). Renders contact header, professional summary, experience (bold title + ` | ` company + date range via `formatRange`), skills chips, education line. Inter 400/700 registered at module scope from the Google Fonts **v20** latin variable-font URL (the v18 URLs originally used 404'd — fixed).
-- **`app/api/resume/generate/route.tsx`** — new POST route handler (note: **`.tsx`**, not `.ts` — it renders JSX to `renderToBuffer`). Flow: `getCurrentUser()` auth → `fetchProfile(user.id)` → `generateResumeContent(profile)` → `renderToBuffer(buildResumeElement(profile, content))` → `new Blob([new Uint8Array(buffer)], { type: "application/pdf" })` → `storage.from("resumes").upload("resumes/{userId}/resume.pdf", blob)` → `getPublicUrl(path)` → `database.from("profiles").update({ resume_pdf_url }).eq("id", user.id)` → returns `{ success, resumePdfUrl }`. 401 unauthenticated, 400 no profile row, 500 on upload/failure.
-- **`components/profile/ResumeUpload.tsx`** — modified. Generate Resume button is live (was a disabled Feature-08 placeholder). New state: `generatePending` (third `useTransition`), `generateStatus` (`idle | generating | generated | error`), `generatedUrl` (overrides the `resumeUrl` prop locally so "View current resume" updates without a reload). `handleGenerate()` POSTs an empty body to `/api/resume/generate`.
-- **`package.json`** — added `@react-pdf/renderer` (installed v4.5.1).
-- **Docs updated** — `context/progress-tracker.md` (08 checked off, decisions section added, next is 09), `context/ui-registry.md` (ResumeUpload rewired entry + new ResumeTemplate entry), `context/library-docs.md` (corrected `.upload()` signature — no options param — and expanded verified CSS prop list).
+- **`app/find-jobs/page.tsx`** — new Server Component page shell. `export const metadata: Metadata = { title: "Find Jobs" }`, page heading + subheading, renders `SearchControls`, `JobsTable`, `JobsPagination`, and a static "Jobs by Adzuna" credit link. Build output shows `/find-jobs` as static (○); auth gating is enforced by `proxy.ts` (its matcher covers `/find-jobs/:path*`).
+- **`components/find-jobs/SearchControls.tsx`** — new Client Component. Search card with 3-col grid (`sm:grid-cols-[1fr_1fr_auto]`): Job Title input with embedded `lucide-react` Search icon, Location input, **disabled** Find Jobs button (`title="Find Jobs lands in Feature 10"`), and a static success banner ("Found 8 jobs and saved 4 strong matches.").
+- **`components/find-jobs/JobsTable.tsx`** — new Client Component. Single surface card containing the filter bar (text filter input + two `<select>`: All/High/Low Match and Match Score/Newest/Oldest — all inert in 09) and a 6-column table (COMPANY, ROLE, MATCH SCORE, SALARY EST., SOURCE, DATE FOUND). Six mock rows span all three score bands (96/94/91/88 green, 72 blue, 58 orange) so every color path renders. Table wrapped in `overflow-x-auto`.
+- **`components/find-jobs/JobsPagination.tsx`** — new Client Component. Static "Showing 1 to 6 of 24 results" plus Previous / 1 / 2 / 3 / Next cluster with `lucide-react` `ChevronLeft/Right`. Previous disabled (mock first page).
+- **`app/globals.css`** — added two new `@theme` tokens: `--color-on-accent-tint: #5E4CFF` and `--color-on-success-tint: #007A55`.
+- **`package.json`** — installed `lucide-react`. It had been listed as an approved dependency in `code-standards.md` since Phase 1 but was never actually installed.
+- **Docs updated** — `context/progress-tracker.md` (09 checked off, phase flipped to 3, next is 10, new 09 decision block), `context/ui-registry.md` (new Phase 3 section with imprints for the three components), `context/ui-tokens.md` (new "Text on Tinted Backgrounds" section).
 
 ## Decisions made
 
-- **Split: GPT-4o writes content, ResumeTemplate renders layout.** GPT produces the professionally-worded narrative; the PDF component renders contact info, education, and fixed layout directly from the `Profile` row. No invented data — the system prompt forbids fabricating companies/titles/dates/skills.
-- **Route handler reads profile from DB, client POSTs an empty body.** No client-submitted payload. Mirrors the extract/upload route decisions (06/07): Route Handler, not Server Action; auth via `getCurrentUser()` server-side (`proxy.ts` matcher excludes `/api/*`).
-- **Generate is not gated on profile completeness.** A thin profile produces a thin resume. Only a missing profile row returns 400. User can generate a draft at any time.
-- **`.tsx` route file** — the route renders JSX so it must be `.tsx`. JSX construction is hoisted into a module-level `buildResumeElement(profile, content)` helper because the `react-hooks/error-boundaries` lint rule forbids JSX constructed inside try/catch.
-- **Storage upload has no options argument in SDK 1.5.1** — the old `{ contentType, upsert }` pattern from library-docs.md does not exist. Uploading to the existing key `resumes/{userId}/resume.pdf` replaces in place (PUT semantics).
-- **PDF buffer → `Blob`** — `renderToBuffer()` returns `Buffer`; the SDK `.upload()` takes `File | Blob`, so wrap as `new Blob([new Uint8Array(buffer)], { type: "application/pdf" })`. Raw Buffer fails TS `BlobPart` narrowing.
-- **Inter font fetched at render time from Google Fonts v20 variable-font URL** — both 400 and 700 point at the same variable-font file (`UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2`). This is the same runtime network dependency class as the GPT-4o call.
+- **Three components, no `JobFilters.tsx`.** The build plan sketched four (`SearchControls`, `JobsTable`, `JobFilters`, `JobsPagination`), but the filter bar is visually a strip at the top of the table card and has no shared state with `SearchControls`. It lives inside `JobsTable.tsx` as a bordered top strip.
+- **`job_search_started` PostHog event NOT emitted from Feature 09.** The Find Jobs button is disabled placeholder UI; wiring the event lands in Feature 10 with the real Adzuna call so analytics stay clean of mock clicks.
+- **Match score thresholds follow `ui-rules.md` (≥80 green, 60–79 blue, <60 orange), NOT `components/homepage/JobsTablePreview.tsx` (≥90 / 70–89 / <70).** The homepage preview was built in Feature 01 from the original design description and predates the clarification in the token docs. Known deviation, not a bug — token-level fix deferred.
+- **Filter/sort/text-filter inputs are plain `<select defaultValue>` / `<input>` with no onChange.** Purely presentational in 09; Feature 11 owns the logic.
+- **No row navigation / no `onClick`.** Clicking a job row does nothing in 09; Feature 12 owns the Link-out to `/find-jobs/[id]`.
+- **Two new tint-companion tokens (`on-accent-tint`, `on-success-tint`) close a WCAG AA contrast gap.** `text-accent` (#7C5CFC) on `bg-accent-muted` (#FAF5FF), and `text-success` on `bg-success-lightest`, both fail WCAG AA. The rule is now documented: `*-foreground` tokens are only for filled dark/accent button surfaces; text on *light tinted* accent/success backgrounds uses `on-accent-tint` / `on-success-tint`. The Find Jobs success banner and highlighted current-page pagination button both follow this rule.
+- **Mock dataset uses 6 rows + "Showing 1 to 6 of 24 results" copy.** Matches the Feature 09 build plan verbatim ("Showing 1 to 6 of 24 results", "Found 8 jobs and saved 4 strong matches").
 
 ## Problems solved
 
-- **Google Fonts v18 URLs 404.** The Inter woff2 URLs originally written (v18 hashes) returned 404 — verified via fetch before wiring. Fixed by fetching `https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap` and using the v20 latin subset URL. If this ever 404s again, re-check the CSS for the current hash.
-- **`react-hooks/error-boundaries` lint error** — "Avoid constructing JSX within try/catch" fired on the inline `<ResumeTemplate />` inside the route's try block. Solved by extracting `buildResumeElement()` to module scope.
-- **`.ts` vs `.tsx` route** — initial `route.ts` failed tsc with JSX syntax errors; renamed to `route.tsx`.
-- **`styles` naming bug** — `StyleSheet.create` was assigned to `s` but referenced as `styles`; renamed the constant.
-- **Unused `WorkExperienceRole` import** in ResumeTemplate — removed (lint).
+- **`import { Link } from "next/link"` failed tsc.** `next/link` in Next.js 16 has no named `Link` export — it's a default export. Fixed with `import Link from "next/link"` in `app/find-jobs/page.tsx`.
+- **`npm` PowerShell script blocked by execution policy on this machine.** Use `npm.cmd` (and `npx.cmd`) in the shell tool — the `.ps1` shim is disabled.
+- **Dev server smoke-tested `/find-jobs`** — route returned 200 through `proxy.ts`. Server stopped before ending the session.
 
 ## Current state
 
-- **Works:** Generate Resume button live; `tsc --noEmit`, `npm run lint`, `npm run build` all pass; `/api/resume/generate` registered as a dynamic route in the build output.
-- **Not yet verified end-to-end:** the live round trip (auth → GPT-4o → `renderToBuffer` → storage upload → DB update → new URL in UI) has not been exercised against a real signed-in profile with a populated `profiles` row. Needs a browser test: fill the form, click Generate Resume, confirm the PDF opens from the "View current resume" link.
-- **Uncommitted:** all Feature 08 changes are in the working tree (new files untracked: `app/api/resume/generate/`, `components/profile/ResumeTemplate.tsx`, `lib/resume-generate.ts`). Also modified: `components/profile/ResumeUpload.tsx`, `context/library-docs.md`, `context/progress-tracker.md`, `context/ui-registry.md`, `package.json`/`package-lock.json`. Pre-existing uncommitted changes not made this session: `.gitignore`, `memory.md`.
+- **Works:** `/find-jobs` shell renders; `tsc --noEmit`, `npm run lint`, `npm run build` all clean. `/find-jobs` registered as a static route. `proxy.ts` auth gate confirmed redirecting unauthenticated hits.
+- **Not yet wired (by design):** Find Jobs button (Feature 10), filter/sort/pagination state (Feature 11), row click → details page navigation (Feature 12). Success banner is a static mock.
+- **Uncommitted:** four new/changed source files (`app/find-jobs/page.tsx`, `components/find-jobs/SearchControls.tsx`, `components/find-jobs/JobsTable.tsx`, `components/find-jobs/JobsPagination.tsx`, `app/globals.css`, `package.json`/`package-lock.json`) plus the docs (`context/progress-tracker.md`, `context/ui-registry.md`, `context/ui-tokens.md`). Prior sessions' Feature 07/08 changes were also uncommitted — check `git status` for the combined working-tree state.
+- **Carried over from prior sessions (still open):** the live round-trip verification for Feature 07 (`/api/resume/extract`) and Feature 08 (`/api/resume/generate`) against a real authenticated profile has never been done in a browser. PDF multi-page overflow is unverified. `library-docs.md` InsForge section still has the outdated legacy `client.from(...)` pattern flagged in Feature 06.
 
 ## Next session starts with
 
-**Feature 09 — Find Jobs Page — Full UI** (Phase 3, per build-plan.md). Run `/architect` before building. The existing Feature 07 memory item is now closed; the Feature 07 caveat (live extract round-trip confirmation) and the Feature 08 caveat (live generate round-trip confirmation) are both open browser-test items worth confirming if the user hasn't done so.
+**Feature 10 — Adzuna Job Discovery** (Phase 3, per build-plan.md). Run `/architect` before building. Scope: build `agent/adzuna.ts` and `agent/matcher.ts`, wire `app/api/agent/find/route.ts` (POST, `getCurrentUser()` auth), enable the Find Jobs button in `SearchControls.tsx`, and emit `job_search_started` + `job_found` PostHog events. The UI shell for displaying results is already in place from Feature 09 — Feature 10 swaps the mock rows for real data.
 
 ## Open questions
 
-- **Live round-trip confirmation for Feature 08** (and 07) — neither the extract nor the generate route has been confirmed working against a real authenticated profile/PDF.
-- **PDF visual QA** — the generated resume layout (spacing, single-page fit with 3+ work roles, Inter rendering via variable font in @react-pdf/fontkit) is unverified visually. A long profile could overflow one A4 page — @react-pdf does not auto-flow text to a second page without explicit layout handling.
-- **`library-docs.md` InsForge section still has the outdated legacy pattern** flagged in Feature 06 (`client.from(...)` vs `client.database.from(...)`) — doc refresh was deferred, still open.
+- **Live round-trip confirmation for Features 07 and 08** — neither the extract nor the generate route has been confirmed working end-to-end against a real signed-in profile/PDF (carried over, still open).
+- **PDF visual QA for the generated resume** — a long profile could overflow one A4 page; `@react-pdf/renderer` does not auto-flow text to a second page without explicit layout handling (carried over, still open).
+- **`library-docs.md` InsForge section** still has the outdated `client.from(...)` legacy pattern flagged in Feature 06 — deferred doc refresh (carried over, still open).
+- **Adzuna API credentials** must be present in `.env.local` (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`) before Feature 10 can be exercised end-to-end. Verify with the user before starting Feature 10.
+- **Country detection for Adzuna** — build-plan defaults to `'us'` and supports `gb`/`au`/`ca`; the Feature 09 UI has no country picker, so Feature 10 needs to decide whether country inference is part of the first pass or a follow-up.

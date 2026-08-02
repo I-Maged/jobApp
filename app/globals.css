@@ -57,6 +57,12 @@
   --color-linkedin-light: #dce6f1;
   --color-linkedin-foreground: #ffffff;
 
+  /* Alias for text rendered on non-button filled backgrounds sharing the
+     accent / success palette (e.g. bg-accent-muted, bg-success-lightest).
+     ui-tokens reserves *-foreground for filled dark/accent buttons only. */
+  --color-on-accent-tint: #5e4cff;
+  --color-on-success-tint: #007a55;
+
   --color-overlay: #111827;
   --color-overlay-dark: #131316;
 

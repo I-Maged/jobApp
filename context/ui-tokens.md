@@ -201,6 +201,17 @@ Match score bars and indicators use gradient stops based on score range:
 | High Match | `bg-success-lightest`  | `text-success-foreground` |
 | Low Match  | `bg-surface-secondary` | `text-text-secondary`     |
 
+### Text on Tinted Backgrounds (accent/success `*-muted` / `*-lightest`)
+
+`*-foreground` tokens are reserved for filled dark surfaces and accent buttons. For text rendered on a *light tinted* accent/success background (`bg-accent-muted`, `bg-accent-light`, `bg-success-lightest`, etc.), use the dedicated tint-companion tokens:
+
+| Element                                          | Token                  |
+| ------------------------------------------------ | ---------------------- |
+| Text on `bg-accent-muted` / `bg-accent-light`    | `text-on-accent-tint`  |
+| Text on `bg-success-lightest` / `bg-success-light` | `text-on-success-tint` |
+
+The raw `text-accent` (#7C5CFC) on `bg-accent-muted` (#FAF5FF) is below WCAG AA contrast — never pair those. Use `text-on-accent-tint` (#5E4CFF) instead.
+
 ---
 
 ## Typography

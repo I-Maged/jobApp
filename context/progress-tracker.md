@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** 2 — Profile Page
-**Last completed:** 08 Resume PDF Generation from Profile
-**Next:** 09 Find Jobs Page — Full UI
+**Phase:** 3 — Find Jobs Page
+**Last completed:** 09 Find Jobs Page — Full UI
+**Next:** 10 Adzuna Job Discovery
 
 ---
 
@@ -30,7 +30,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 3 — Find Jobs Page
 
-- [ ] 09 Find Jobs Page — Full UI
+- [x] 09 Find Jobs Page — Full UI
 - [ ] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
@@ -169,6 +169,19 @@ Update this file after every completed feature. Any AI agent reading this should
 - AgentLog built as live dark terminal with traffic-light dots, monospace text, color-coded log lines, blinking cursor — instead of using `agnet-log.png`.
 - Testimonial avatar uses `user-icon.png` cropped to circular frame.
 - BottomCTA uses `bg-accent-muted` (subtle purple tint) — design didn't specify but subtle accent fits the visual hierarchy.
+
+### 09 Find Jobs Page — Full UI
+
+- **Three components, no `JobFilters.tsx`.** `components/find-jobs/SearchControls.tsx` (title/location inputs + disabled accent only-for-level-1-leveling the integration game in order to control Future 10), `components/find-jobs/JobsTable.tsx` (filter bar inlined as the table card's header + 6-row static table), `components/find-jobs/JobsPagination.tsx` (static "Showing 1 to 6 of 24 results" + page buttons). The filter bar has no shared state with SearchControls, so it lives inside the table card rather than as a fourth file. Registered in `ui-registry.md`.
+- **`lucide-react` installed** (v.x latest at build time) and added to the package.json deps. Was listed as approved in `code-standards.md` since Phase 1 but not actually installed until this feature. Used in `SearchControls` (Search icon on the button) and `JobsPagination` (ChevronLeft/Right).
+- **Find Jobs button intentionally disabled with `title="Find Jobs lands in Feature 10"`.** Follows the Feature 05 pattern for disabled CTAs pointing at the owning feature. `job_search_started` PostHog event NOT emitted here — analytics stay clean of mock clicks; wired in Feature 10.
+- **Filter dropdowns/sort/text-filter present but inert.** Plain `<select defaultValue>` and `<input>`, no state or change handlers yet. Feature 11 owns the logic.
+- **Match score thresholds updated to match `ui-rules.md`** — ≥80 green (`text-success`/`bg-success`), 60–79 blue (`text-info`/`bg-info`), <60 orange (`text-warning`/`bg-warning`). Note: `components/homepage/JobsTablePreview.tsx` still uses the old 90/70 rule per its original Feature 01 design description — dashed off as a known deviation, token-level fix deferred.
+- **Mock data covers all three score bands deliberately** — Figma row uses 58 so the `warning` (orange) visual path is rendered (`<60` needs at least one row). Six rows mirroring the homepage preview companies, extended with Role and Date Found columns.
+- **`app/find-jobs/page.tsx` is a Server Component with `export const metadata: Metadata = { title: "Find Jobs" }`.** Follows the same shell pattern as `app/profile/page.tsx` — `max-w-[1440px]` with `px-6/md:px-8 py-8/10`, `gap-6`. `proxy.ts` matcher covers `/find-jobs/:path*` so unauthenticated users bounce to `/login` before render.
+- **`"Jobs by Adzuna"` credit rendered below the pagination row** — plain sentence with a text-link on "Adzuna". Build output shows `/find-jobs` as static (○), gated at runtime by `proxy.ts`.
+- **Two new tint tokens added to `@theme` in `globals.css`:** `--color-on-accent-tint: #5E4CFF` and `--color-on-success-tint: #007A55`. These close a naming trap: `*-foreground` tokens in `ui-tokens.md` are reserved for filled dark surfaces and accent buttons — NOT for text on light `*-muted` / `*-lightest` tinted backgrounds. `text-accent` on `bg-accent-muted` renders #7C5CFC-on-#FAF5FF (soft-low-contrast), so the Find Jobs success banner and the highlighted current page button use `text-on-success-tint` / `text-on-accent-tint` (WCAG-AA-passing against the tinted backgrounds). Documented in `ui-tokens.md` and `ui-registry.md`.
+- **Success banner in `SearchControls` is static mock text:** "Found 8 jobs and saved 4 strong matches." Only shown as a visual placeholder; Feature 10 swaps to conditional rendering based on the Adzuna run result.
 
 ---
 

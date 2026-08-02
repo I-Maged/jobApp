@@ -201,6 +201,92 @@ Centered shell for login + callback routes. No nav/footer, brand logo above the 
 
 ---
 
+## Phase 3 — Find Jobs Components (imprinted 2026-08-03)
+
+### SearchControls — `components/find-jobs/SearchControls.tsx`
+
+File: `components/find-jobs/SearchControls.tsx`
+Last updated: 2026-08-03
+
+Client Component (will own controlled state in Feature 10). Search card at the top of `/find-jobs` with Job Title input (Search icon inside, left-aligned), Location input, disabled Find Jobs button, and a static green success banner.
+
+| Property              | Class |
+| --------------------- | ----- |
+| Card                  | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| 3-col grid            | `grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto]` |
+| Field wrapper         | `flex flex-col gap-2` |
+| Label                 | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
+| Input (no icon)       | `block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent` |
+| Icon-input wrapper    | `relative`, inner `<Search>` icon `absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted`, input uses `pl-10 pr-3` |
+| Find Jobs button      | `inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60` |
+| Success banner        | `rounded-md border border-success-lightest bg-success-lightest px-4 py-2.5 text-sm font-medium text-on-success-tint` |
+
+**Pattern notes:**
+- Two input variants: iconless Location uses the same baseline class only; icon Title wraps the `<Search />` absolutely and pads the input left to `pl-10`.
+- Find Jobs button is fixed-height `h-10` and bottom-aligned via `sm:items-end` wrapper (`flex items-end`) so the button sits baseline-flush with the inputs.
+- Button is disabled in Feature 09 (`title="Find Jobs lands in Feature 10"`) — mirrors the Feature 05 CTA convention.
+- Success banner uses the new `text-on-success-tint` token — not `text-accent`/`text-success`, which are below WCAG AA against `bg-success-lightest`. See `ui-tokens.md` "Text on Tinted Backgrounds".
+
+### JobsTable — `components/find-jobs/JobsTable.tsx`
+
+File: `components/find-jobs/JobsTable.tsx`
+Last updated: 2026-08-03
+
+Client Component. Single bordered surface card containing (a) the filter bar as a top strip separated by a bottom border, (b) the jobs table, (c) horizontally-scrollable overflow on narrow viewports. Filter + sort inputs are inert-controlled (no state) — Feature 11 will wire them.
+
+| Property              | Class |
+| --------------------- | ----- |
+| Card                  | `flex flex-col gap-0 rounded-2xl border border-border bg-surface shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` — overflow handled per-region |
+| Filter bar            | `flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center` |
+| Filter text input     | same as SearchControls input class |
+| Filter/sort `<select>`| `block w-32 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent` |
+| Table scroller        | `overflow-x-auto` wrapper div |
+| Table                 | `w-full border-collapse` |
+| THead row             | `border-b border-border bg-surface-secondary` |
+| Th                    | `px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary` |
+| Body row              | `border-b border-border transition-colors hover:bg-surface-secondary last:border-b-0` |
+| Cell (base)           | `px-5 py-4` |
+| Company cell          | + `text-sm font-medium text-text-primary` |
+| Role cell             | + `text-sm text-text-primary` |
+| Salary cell           | + `text-sm text-text-secondary tabular-nums` |
+| Date cell             | + `text-xs text-text-muted` |
+| Score wrapper         | `flex items-center gap-3` |
+| Score %               | `text-sm font-semibold tabular-nums` colored via `getScoreColor` — ≥80 `text-success`, ≥60 `text-info`, else `text-warning` |
+| Score bar track       | `h-1 w-20 overflow-hidden rounded-full bg-border-light` |
+| Score bar fill        | `h-full rounded-full` colored via `getScoreBarColor`, inline `style={{ width: \`${score}%\` }}` |
+| Source badge          | `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium` + `bg-linkedin-light text-linkedin` for LinkedIn, `bg-surface-secondary text-text-secondary` for URL |
+
+**Pattern notes:**
+- Filter bar lives INSIDE the table card (border-b separator), not as a separate card. Visually one surface; functionally three inputs above the rows.
+- Plain `<select defaultValue>` elements with no `onChange` — purely presentational in Feature 09, wired in Feature 11.
+- Mock job data covers all three score bands (96/94/91/88 green, 72 blue, 58 orange) so every color path renders in the static shell.
+- `matchScore` thresholds come from `ui-rules.md` (80/60), NOT from `components/homepage/JobsTablePreview.tsx` (90/70) — intentional deviation; the homepage preview predates the rule clarification.
+- No `onClick` / no row navigation in Feature 09 — clicking a row is a no-op; Feature 12 owns the Link-out to `/find-jobs/[id]`.
+
+### JobsPagination — `components/find-jobs/JobsPagination.tsx`
+
+File: `components/find-jobs/JobsPagination.tsx`
+Last updated: 2026-08-03
+
+Client Component. Static "Showing 1 to 6 of 24 results" left, page-button cluster right.
+
+| Property              | Class |
+| --------------------- | ----- |
+| Wrapper               | `flex flex-col items-center justify-between gap-4 sm:flex-row` |
+| Summary text          | `text-sm text-text-secondary` with inner `font-medium text-text-primary` numerals |
+| Button cluster        | `flex items-center gap-0 rounded-md border border-border bg-surface` |
+| Prev/Next button      | `flex items-center gap-1 px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50` |
+| Page-number button    | `border-l border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-secondary` |
+| Current page button   | `border-l border-border bg-accent-muted px-3 py-1.5 text-sm font-medium text-on-accent-tint` |
+
+**Pattern notes:**
+- Buttons sit flush with no gaps (`gap-0`), separated by `border-l border-border` on every button except the first.
+- Current page uses `bg-accent-muted text-on-accent-tint` (NOT `text-accent` on `bg-accent-muted`, see `ui-tokens.md` "Text on Tinted Backgrounds"). Accent only used for the tint highlight — never the button surface color itself.
+- Previous disabled on the first (and only) page in the mock; Feature 11 will wire real pagination.
+- Icons are `lucide-react` (`ChevronLeft`, `ChevronRight`) at `h-4 w-4`.
+
+---
+
 ## Phase 2 — Profile Components (imprinted 2026-08-01)
 
 ### ProfileBanner (inline header in `app/profile/page.tsx`)
