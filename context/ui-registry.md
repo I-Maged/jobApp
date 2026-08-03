@@ -217,6 +217,22 @@ Inline error banner for forms and search controls. Red border, surface backgroun
 - Extracted from three identical inline implementations (SearchControls and ProfileForm ×2). Changes to error styling go here once.
 - Follows the project's no-raw-hex rule: uses `border-error` / `text-error` tokens, not hardcoded colors.
 
+### BulletList — `components/ui/BulletList.tsx`
+
+File: `components/ui/BulletList.tsx`
+Last updated: 2026-08-04 (Feature 12 review — extracted from duplicate sub-components)
+
+Shared bullet-list section for cards. Renders an `h3` subheading + a disc-bulleted list of strings. Used by `JobDescription` (Responsibilities/Requirements/Nice to Have/Benefits) and `CompanyResearch` (Culture/Your Edge/Gaps/Smart Questions/Interview Prep).
+
+| Property | Class |
+| -------- | ----- |
+| Subheading | `text-sm font-semibold text-text-primary` |
+| List | `mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-text-secondary` |
+
+**Pattern notes:**
+- Extracted from byte-identical private sub-components created in the same change (`JobDescription.BulletSection`, `CompanyResearch.BulletList`) — review finding #6. Changes to bullet styling go here once.
+- Item keys are composite (`${item}-${index}`) — the arrays are LLM/Adzuna-sourced and can repeat values, which would collide with `key={item}`.
+
 ---
 
 ## Phase 3 — Find Jobs Components (imprinted 2026-08-03, wired 2026-08-03)
@@ -253,7 +269,7 @@ Client Component. Search card at the top of `/find-jobs` with Job Title input (S
 ### JobsTable — `components/find-jobs/JobsTable.tsx`
 
 File: `components/find-jobs/JobsTable.tsx`
-Last updated: 2026-08-03 (Feature 11 — presentational: receives the current page slice + controlled filter/sort props; MOCK_JOBS fallback removed)
+Last updated: 2026-08-04 (Feature 12 — rows navigate to `/find-jobs/[id]`)
 
 Client Component. Single bordered surface card containing (a) the filter bar as a top strip separated by a bottom border, (b) the jobs table, (c) horizontally-scrollable overflow on narrow viewports. Filter/sort values and setters are controlled by `FindJobsClient` — this component renders only.
 
@@ -286,7 +302,7 @@ Props: `{ rows: DisplayJob[]; hasJobs: boolean; filterText: string; onFilterText
 - Controlled `<select value={matchTier}>` / `<select value={sortKey}>` + controlled text input — state lives in `FindJobsClient` (Feature 11). Changing any filter resets the page to 1 in the container.
 - `matchScore` thresholds come from `MATCH_THRESHOLD` in `lib/utils.ts` (≥70 green, 60–69 blue, <60 orange) via `getScoreColor`/`getScoreBarColor` — NOT from `components/homepage/JobsTablePreview.tsx` (90/70); the homepage preview predates the rule clarification.
 - Empty state differentiates the two cases via `hasJobs`: no saved jobs at all → "No jobs yet. Run a search to find matching roles."; jobs exist but filters exclude everything → "No jobs match your filters."
-- `rows` is already the paginated slice — `FindJobsClient` computes filtered → sorted → sliced. No row navigation in Feature 11 — clicking a row is a no-op; Feature 12 owns the Link-out to `/find-jobs/[id]`.
+- `rows` is already the paginated slice — `FindJobsClient` computes filtered → sorted → sliced. Row navigation (Feature 12): the whole `<tr>` is clickable (`onClick` + `useRouter` + `cursor-pointer`) and the company cell is a real `<Link href={/find-jobs/[id]}>` with `stopPropagation` for keyboard access.
 
 ### JobsPagination — `components/find-jobs/JobsPagination.tsx`
 
@@ -311,6 +327,25 @@ Props: `{ page: number; pageSize: number; totalCount: number; onPageChange: (pag
 - Current page uses `bg-accent-muted text-on-accent-tint` (NOT `text-accent` on `bg-accent-muted`, see `ui-tokens.md` "Text on Tinted Backgrounds"). Accent only used for the tint highlight — never the button surface color itself.
 - Previous disabled on the first (and only) page in the mock; Feature 11 will wire real pagination.
 - Icons are `lucide-react` (`ChevronLeft`, `ChevronRight`) at `h-4 w-4`.
+
+### FindJobsClient — `components/find-jobs/FindJobsClient.tsx`
+
+File: `components/find-jobs/FindJobsClient.tsx`
+Last updated: 2026-08-04 (imprinted; Feature 11 — state container)
+
+Client Component. The page-level container for `/find-jobs`. Owns all list state (`jobs`, `filterText`, `matchTier`, `sortKey`, `page`), derives the filtered/sorted/paginated view, and composes `SearchControls` → `JobsTable` → `JobsPagination`. No visual surface of its own beyond the stack wrapper.
+
+| Property         | Class |
+| ---------------- | ----- |
+| Stack wrapper    | `flex flex-col gap-6` |
+| Composition      | `<SearchControls userId onResults>` → `<JobsTable rows hasJobs filter/sort controlled>` → `<JobsPagination page pageSize totalCount onPageChange>` |
+
+**Pattern notes:**
+- Feature 11 moved all list state here (not into `JobsTable`): the container is the only place that knows the *filtered* total, so pagination and empty-state differentiation both flow from it.
+- `filterAndSortJobs` from `lib/jobs-view.ts` runs in a `useMemo` over `[jobs, filterText, matchTier, sortKey]`. Page slice = `filtered.slice(start, start + JOBS_PAGE_SIZE)` with `safePage = Math.min(page, totalPages)` so a shrink on filter change never lands past the end.
+- Every change handler resets `page` to 1; `onResults` (from a new search) **merges** `[...results, ...prev]` and resets to page 1 — new results prepend rather than replace the collection.
+- `hasJobs` passed down is `jobs.length > 0` (total collection, not the filtered page) so the table distinguishes "no jobs yet" from "no jobs match your filters".
+- New search results are NOT deduped — re-searching the same title+location accumulates duplicate rows (see open question, Feature 13).
 
 ---
 
@@ -441,3 +476,103 @@ Single Client Component that owns all five profile sections. Internal sub-compon
 - The Extract button stays disabled with `title="Extract from Resume lands in Feature 07"` — Feature 07 owns that wiring.
 - **Feature 07 wiring (2026-08-02):** Extract button is now live. `onClick={handleExtract}` fires `POST /api/resume/extract` via a second `useTransition` (`extractPending`); label flips "Extract from Resume" → "Extracting…". On success each returned field is spread into its `useState` setter (extracted-wins, absent-keeps-existing); a green "Extracted N fields…" banner confirms and the Save banner is reset to `idle` so the two statuses never collide. Extract errors (`extractStatus === "error"`) use the same banner visual as Save errors but a separate state/message slot. Extract does NOT call `saveProfile` — the user explicitly clicks Save Profile after reviewing.
 - Email field is `disabled` — server pre-fills it from `profile.email` (which itself fell back to `user.email`) in `app/profile/page.tsx`.
+
+---
+
+## Phase 4 — Job Details Components (imprinted 2026-08-04)
+
+### JobInfo — `components/job-details/JobInfo.tsx`
+
+File: `components/job-details/JobInfo.tsx`
+Last updated: 2026-08-04 (Feature 12)
+
+Server Component. Job header card — gradient logo placeholder, title, company · location, match badge, View Job Post + Apply Now anchors — plus a row of 4 info cards (Salary Est. / Location / Job Type / Date Found). Renders for any job from the DB; the page owns the 404 for missing rows.
+
+| Property            | Class |
+| ------------------- | ----- |
+| Header card         | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Logo placeholder    | `flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-on-dark` + inline gradient `linear-gradient(45deg, #7C5CFC 0%, #4A2EC5 100%)` (brand exception, same as `Logo`) |
+| Job title           | `text-xl font-semibold leading-7 text-text-primary` |
+| Company · location  | `mt-1 text-sm leading-5 text-text-secondary` |
+| Match badge         | `inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold` + `bg-success-lightest text-on-success-tint` (≥70) / `bg-info-lightest text-info-foreground` (60–69) / `bg-warning text-warning-foreground` (<60) — boundaries from `MATCH_THRESHOLD` |
+| View Job Post (secondary anchor) | `inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary` |
+| Apply Now (primary anchor) | `inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark` |
+| Info cards grid     | `mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4` |
+| Info card           | `rounded-xl border border-border bg-surface p-4` |
+| Info label          | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
+| Info value          | `mt-1.5 text-sm font-semibold text-text-primary` |
+
+**Pattern notes:**
+- Both external actions are `<a target="_blank" rel="noopener noreferrer">` — Apply Now → `external_apply_url` (fallback `source_url`); View Job Post → `source_url`.
+- Info cards are `rounded-xl` siblings in a grid inside the `rounded-2xl` header card — exactly 2 radius levels, never nested deeper.
+- Salary/location fall back to "Not listed"; job type maps Adzuna `contract_type` values (`permanent`/`fulltime` → Full-time, `part_time`/`parttime` → Part-time, `temporary` → Temporary, `internship` → Internship, `contract` → Contract) with raw value as last-resort default. Date uses shared `formatDate` from `lib/jobs-view.ts`.
+- Match badge classes come from `getScoreTier(score)` in `lib/jobs-view.ts` (single boundary definition shared with the JobsTable score colors) mapped through `MATCH_BADGE_CLASS` — review finding #5.
+- Company is null-guarded: `job.company || "Unknown company"` before `.trim()` (schema column is nullable) — review finding #2.
+- "View Job Post" uses the hero secondary-button classes; "Apply Now" the primary-button classes from `ui-tokens.md`.
+
+### MatchScore — `components/job-details/MatchScore.tsx`
+
+File: `components/job-details/MatchScore.tsx`
+Last updated: 2026-08-04 (Feature 12)
+
+Server Component. Two cards: AI Match Reasoning (paragraph) + Required Skills vs Your Profile (matched green / missing accent-tint badge groups). Rendered as a fragment — the page owns the gap between cards.
+
+| Property            | Class |
+| ------------------- | ----- |
+| Card                | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Section heading     | `text-base font-semibold leading-6 text-text-primary` |
+| Body paragraph      | `mt-3 max-w-3xl text-sm leading-6 text-text-secondary` |
+| Skills grid         | `mt-4 grid grid-cols-1 gap-6 md:grid-cols-2` |
+| Group label         | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
+| Matched badge       | `inline-flex items-center rounded-full bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-foreground` |
+| Missing badge       | `inline-flex items-center rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-on-accent-tint` |
+| Empty text          | `mt-2 text-sm text-text-muted` |
+
+**Pattern notes:**
+- Missing-skill badges deliberately use `text-on-accent-tint` (NOT `text-accent`) on `bg-accent-muted` — WCAG-AA pair, same precedent as JobsPagination current page. Matched uses `text-success-foreground` (hex-identical to `on-success-tint`).
+- Badge keys are composite (`${skill}-${index}`) — `matched_skills`/`missing_skills` are stored verbatim from LLM output with no dedup, so `key={skill}` would collide — review finding #3.
+- Both groups render a muted empty-state line when their array is empty — never a bare heading.
+
+### JobDescription — `components/job-details/JobDescription.tsx`
+
+File: `components/job-details/JobDescription.tsx`
+Last updated: 2026-08-04 (Feature 12)
+
+Server Component. Job Description card: `about_role` paragraph, then Responsibilities / Requirements / Nice to Have / Benefits bullet lists, then About the Company. Sections render only when their data exists.
+
+| Property            | Class |
+| ------------------- | ----- |
+| Card                | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` with internal `flex flex-col gap-6` |
+| Section heading     | `text-base font-semibold leading-6 text-text-primary` |
+| Body paragraph      | `mt-3 text-sm leading-6 text-text-secondary` |
+| Subheading          | `text-sm font-semibold text-text-primary` |
+| Bullet list         | `mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-text-secondary` |
+
+**Pattern notes:**
+- Section bullets use the shared `components/ui/BulletList.tsx` primitive (extracted from this component's original private `BulletSection` — review finding #6).
+- `about_role` (the Adzuna snippet) is the fallback description; "No description is available for this job yet." when empty.
+
+### CompanyResearch — `components/job-details/CompanyResearch.tsx`
+
+File: `components/job-details/CompanyResearch.tsx`
+Last updated: 2026-08-04 (Feature 12)
+
+Server Component. Renders the full 9-field dossier when `company_research` is present, otherwise a centered empty state with a disabled Research Company button (wiring lands in Feature 13).
+
+| Property            | Class |
+| ------------------- | ----- |
+| Card                | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Empty-state wrapper | `flex flex-col items-center gap-3 rounded-2xl ... p-6 text-center` |
+| Empty-state icon    | `Search` (lucide) `h-8 w-8 text-text-muted` |
+| Empty-state copy    | `max-w-md text-sm leading-5 text-text-secondary` |
+| Research button     | primary button classes, `disabled` + `title="Company research lands in Feature 13"` |
+| Dossier subheading  | `text-sm font-semibold text-text-primary` (paragraph sections) |
+| Tech Stack tag      | `inline-flex items-center rounded-full bg-surface-secondary px-2 py-0.5 text-xs font-medium text-text-secondary` |
+| Bullet list         | `mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-text-secondary` (shared `components/ui/BulletList.tsx`) |
+| Sources label       | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
+| Source link         | `text-xs text-text-primary underline decoration-text-muted underline-offset-2 transition-colors hover:text-accent` (hostname-stripped `https://` prefix) |
+
+**Pattern notes:**
+- `asDossier()` narrows `Record<string, unknown> | null` field-by-field in plain TS (no Zod) — same approach as the profile extractor. Fields not present render nothing; empty `companyOverview` falls back to "No company overview available yet." (review finding #4).
+- Dossier sections: Overview + Why This Role are paragraphs; Tech Stack is tags; Culture / Your Edge / Gaps to Address / Smart Questions / Interview Prep are bullets; Sources are external links.
+- Only renders dossier sections with content — a thin dossier never shows empty subheadings.

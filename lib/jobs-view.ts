@@ -3,6 +3,8 @@ import type { Job } from "@/types";
 
 export type MatchTier = "all" | "high" | "low";
 
+export type ScoreTier = "high" | "mid" | "low";
+
 export type SortKey = "score" | "newest" | "oldest";
 
 export type DisplayJob = {
@@ -25,6 +27,20 @@ export function toDisplayJob(job: Job): DisplayJob {
     source: job.source === "search" ? "Adzuna" : "URL",
     dateFound: job.found_at,
   };
+}
+
+export function getScoreTier(score: number): ScoreTier {
+  if (score >= MATCH_THRESHOLD) return "high";
+  if (score >= 60) return "mid";
+  return "low";
+}
+
+export function formatDate(isoDate: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(isoDate));
 }
 
 export function filterAndSortJobs(

@@ -1,48 +1,50 @@
-# Memory — Feature 11: Filter + Sort + Pagination wired to real DB data
+# Memory — Feature 12: Job Details Page — Full UI
 
-Last updated: 2026-08-03
+Last updated: 2026-08-04
 
 ## What was built
 
-- **`lib/jobs-view.ts`** (new) — pure client-safe helpers: `DisplayJob`, `MatchTier`, `SortKey`, `toDisplayJob(job)`, `filterAndSortJobs(jobs, { text, tier, sort })`. Text filter on company/title, High/Low tiers from `MATCH_THRESHOLD`, sorts score-desc / newest / oldest (compares `Date.getTime()`).
-- **`lib/jobs-data.ts`** (new) — `fetchUserJobs(userId)` server helper: `jobs` scoped to `user_id`, ordered `found_at desc`; logs `[jobs-data]` and returns `[]` on error.
-- **`lib/utils.ts`** — added `JOBS_PAGE_SIZE = 20`.
-- **`app/find-jobs/page.tsx`** — now server-fetches `initialJobs` (all of the user's saved jobs) and passes them into `FindJobsClient`.
-- **`components/find-jobs/FindJobsClient.tsx`** — now the container owning `jobs`, `filterText`, `matchTier`, `sortKey`, `page`. Derives filtered/sorted list via `useMemo`, slices by page, and passes presentation-only props down. Search results **merge** (`[...results, ...prev]`), page resets to 1 on any change.
-- **`components/find-jobs/JobsTable.tsx`** — presentational: receives the page slice (`rows: DisplayJob[]`) + controlled filter/sort values/setters + `hasJobs`. `MOCK_JOBS` fallback deleted. Empty state differentiates "No jobs yet. Run a search…" vs "No jobs match your filters."
-- **`components/find-jobs/JobsPagination.tsx`** — controlled (`page`/`pageSize`/`totalCount`/`onPageChange`); "Showing X to Y of Z results"; windowed page list (≤7 pages shown, else first/last/current±1 with `…`); returns `null` when `totalCount === 0`.
-- **Docs updated:** `progress-tracker.md` (11 marked done, next = 12), `ui-registry.md` (FindJobsClient entry added; JobsTable/JobsPagination entries rewired), `ui-rules.md` + `ui-tokens.md` match-score tables reconciled to `MATCH_THRESHOLD`.
+- **`app/find-jobs/[id]/page.tsx`** (new) — async Server Component job details page. Awaits `params` (Next 16), `getCurrentUser()` → `fetchJob(id, user.id)` → `notFound()` if null. Composes Back to Jobs link + JobInfo/MatchScore/JobDescription/CompanyResearch in a `flex flex-col gap-6` shell.
+- **`app/find-jobs/[id]/not-found.tsx`** (new) — segment 404: Back to Jobs link + "Job not found" card + Go to Find Jobs CTA.
+- **`lib/jobs-data.ts`** — added `fetchJob(jobId, userId)` (`.eq("id", jobId).eq("user_id", userId).maybeSingle()`, returns `Job | null`, logs `[jobs-data]` on error).
+- **`lib/jobs-view.ts`** — added `formatDate(isoDate)` (hoisted from JobsTable, shared) and `getScoreTier(score): "high" | "mid" | "low"` + `ScoreTier` type (single `>= 70 / >= 60` boundary definition, from `MATCH_THRESHOLD`).
+- **`components/job-details/`** (new, 4 files) — `JobInfo.tsx` (header: gradient logo placeholder with company initial, title, company · location, match badge, View Job Post secondary + Apply Now primary anchors; 4 info cards: Salary Est. / Location / Job Type / Date Found), `MatchScore.tsx` (AI Match Reasoning + Matched/Missing Skills badge groups), `JobDescription.tsx` (about_role + Responsibilities/Requirements/Nice to Have/Benefits bullets + About the Company), `CompanyResearch.tsx` (full 9-field dossier render when `company_research` present, else centered empty state with disabled Research Company button).
+- **`components/ui/BulletList.tsx`** (new) — shared bullet-list primitive (extracted from duplicate sub-components during review).
+- **`components/find-jobs/JobsTable.tsx`** — rows now navigate to `/find-jobs/[id]` (full-row `onClick` + `useRouter`, company cell is a real `<Link>` with `stopPropagation`); score colors use shared `getScoreTier`; `formatDate` imported from jobs-view.
+- **Docs updated:** `progress-tracker.md` (12 marked done, next = 13, review-fixes note added), `ui-registry.md` (Phase 4 entries + `BulletList` primitive + `FindJobsClient` entry that was previously missing + JobsTable row-nav note), `/imprint` run.
 
 ## Decisions made
 
-- **List state lives in `FindJobsClient`** (not JobsTable) so the container knows the *filtered* total — the only correct place for pagination. JobsTable/JobsPagination are presentational.
-- **"All Matches" = all of the user's saved jobs, loaded server-side at page load** (build-plan Feature 11 spec), not just the last search's 10 rows.
-- **New search results merge (prepend) into the existing list** instead of replacing it — otherwise a new search clobbers the full collection. Re-running the same search still inserts duplicate DB rows (no dedupe anywhere — see open questions).
-- **`JOBS_PAGE_SIZE = 20`** from build-plan/`project-overview` spec wins over the Feature 09 mock copy ("Showing 1 to 6 of 24 results" was design-mock text).
-- **Match-score color boundaries now documented as derived from `MATCH_THRESHOLD`** (≥70 green, 60–69 blue, <60 orange) in both ui-rules.md and ui-tokens.md — resolves the last session's doc-reconciliation open question. Code was already on this.
-- Adzuna source badge renders gray (`bg-surface-secondary text-text-secondary`), no new token added.
+- **Details page is a Server Component fetching directly from InsForge** — no client state, no API route. `fetchJob` is always user-scoped (`.eq("user_id", userId)`); a single 404 for both "no such job" and "not your job" avoids leaking existence.
+- **Apply Now → `external_apply_url` (fallback `source_url`); View Job Post → `source_url`.** Both `target="_blank" rel="noopener noreferrer"`. Adzuna rows set both to `redirect_url`, so they only diverge for future URL-imported jobs.
+- **Company logo placeholder uses the brand gradient** (inline `linear-gradient(45deg, #7C5CFC 0%, #4A2EC5 100%)`, same as `Logo`) — the only accepted inline-style exception in the codebase.
+- **Score-tier boundaries centralized in `getScoreTier`** (jobs-view): JobInfo badge + JobsTable text/bar colors all map tier → class maps. Do NOT reintroduce inline `>= MATCH_THRESHOLD / >= 60` comparisons.
+- **Composite React keys** (`${value}-${index}`) on all LLM/Adzuna-sourced list renders — matched/missing skills are stored verbatim from LLM output with no dedup (`agent/matcher.ts` `asStringArray` filters type only), so `key={value}` can collide.
+- **Match badge colors:** `bg-success-lightest text-on-success-tint` (≥70) / `bg-info-lightest text-info-foreground` (60–69) / `bg-warning text-warning-foreground` (<60). Missing-skill badges: `bg-accent-muted text-on-accent-tint` (NOT `text-accent` — WCAG-AA, same as JobsPagination).
+- **job_type display maps Adzuna `contract_type` values** (`permanent`/`fulltime` → Full-time, `part_time`/`parttime` → Part-time, `temporary` → Temporary, `internship` → Internship, `contract` → Contract; raw value as last-resort).
+- **`CompanyResearch` renders the full dossier when data exists** (Overview/Why This Role paragraphs, Tech Stack tags, Culture/Your Edge/Gaps/Smart Questions/Interview Prep bullets, Sources as links) — Feature 13 just wires the button + data flow.
 
 ## Problems solved
 
-- **Static pagination** ("Showing 1 to 6 of 24 results" hardcoded) → fully controlled by filtered totals.
-- **`MOCK_JOBS` fallback before first search** → real DB data with a neutral empty state (open question from last session closed).
-- **ui-rules.md (80/60) and ui-tokens.md (90/70/50) contradicted the code and each other** on match-score colors — both reconciled to the code's `MATCH_THRESHOLD`-derived rule.
+- **Next.js 16 dynamic route**: `params` is a `Promise` — must `await params` in the page. `notFound()` renders the segment-level `not-found.tsx`. Confirmed via `node_modules/next/dist/docs/`.
+- **memory.md drift caught**: it claimed "FindJobsClient entry added" to ui-registry.md but the entry was missing — added during `/imprint`.
+- **Adzuna job_type values rendered raw** ("permanent" showed as lowercase) — fixed by mapping real `contract_type` values.
+- **`job.company` can be NULL** in the DB schema (type says non-null) — `company.trim()` crash guarded with `job.company || "Unknown company"`.
+- **Duplicate key risk on skill badges** — LLM output repeats values; composite keys now used everywhere relevant.
+- **Score-tier logic existed in 3 copies** (JobsTable ×2 + JobInfo) with hardcoded 60 — consolidated into `getScoreTier`.
 
 ## Current state
 
-- `npx.cmd tsc --noEmit`, `npx.cmd eslint .`, and `npm.cmd run build` all pass. Dev smoke test: `/find-jobs` → 307 to `/login` (auth gate intact), `/api/agent/find` → clean `401 {"success":false,"error":"Not signed in"}`.
-- Feature 11 is complete; Phase 3 is done. **Next feature: 12 Job Details Page — Full UI.**
-- `/imprint` was not run this session — `ui-registry.md` was updated manually instead (FindJobsClient added, JobsTable/JobsPagination entries rewritten). Run `/imprint` in the next session if strict skill compliance is wanted.
-- Scoring end-to-end still blocked by the OpenAI key HTTP 429 (unchanged since last session).
+- Feature 12 complete: tsc, eslint, build all clean. `/find-jobs/[id]` → 307 `/login` when unauthenticated (auth gate verified via curl). Phase 4 done, next = 13.
+- **Still blocked (unchanged from previous session):** OpenAI key returns HTTP 429 — scoring end-to-end and the details page render with real DB rows are untested in a live browser session. Company research dossier never populated yet (Feature 13).
+- Search results are NOT deduped — re-searching the same title+location accumulates duplicate rows (open since Feature 11, noted in registry).
 
 ## Next session starts with
 
-1. **Feature 12 — Job Details Page — Full UI** (`app/find-jobs/[id]/page.tsx` + `components/job-details/*`): back to Jobs link, job header (company/logo placeholder/title/match score badge/View Job Post), info cards (salary/location/job type/date found), AI Match Reasoning, Required Skills vs Your Profile (green/red badges), Job Description, Company Research card with empty state + Research Company button (wiring lands in 13), Apply Now → `external_apply_url` in new tab. Job data comes from the DB row (already populated by Phase 3); wire a `fetchJob` server helper (pattern: `lib/jobs-data.ts` + `fetchProfile`).
-2. Resolve the **OpenAI 429** — still the operational blocker for live scoring verification.
-3. With a working OpenAI key, run a real search and verify: live rows replace the empty state, banner counts are honest, pagination over multiple saved searches, 429 concurrency response.
+Feature 13 — Company Research Agent. Per `context/build-plan.md`: wire the "Research Company" button in `CompanyResearch.tsx` (remove `disabled` + `title` placeholder) → `POST /api/agent/research` → `agent/research.ts` (Browserbase + Stagehand) → write `company_research` jsonb (fields already typed in `CompanyResearch.asDossier`: companyOverview, techStack, culture, whyThisRole, yourEdge, gapsToAddress, smartQuestions, interviewPrep, sources). Read `library-docs.md` for Browserbase/Stagehand patterns first. Then update progress-tracker + run /imprint.
 
 ## Open questions
 
-- **Duplicate rows on re-search:** each Adzuna run inserts fresh `jobs` rows with new uuids, and the list now merges — re-searching the same title+location accumulates duplicate postings. Dedupe by `source_url` at insert time, or accept and let the user filter? (Not in feature 11 scope; flag before Feature 13.)
-- Is the OpenAI 429 quota exhaustion, rate limit, or an invalid-key state? (Error body was empty.)
-- Feature 12 will need the job-details page to handle a missing/invalid job id gracefully (404 path) — confirm the desired UX.
+- OpenAI 429 — needs a working key before the scoring→details end-to-end can be verified in-browser.
+- Search-result dedup: decide whether duplicate rows from repeated searches are acceptable or should be deduped (id-based) at insert time.
+- `max-w-360` (profile page) vs `max-w-[1440px]` (everywhere else) — same value, left untouched.

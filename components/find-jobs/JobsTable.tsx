@@ -1,26 +1,28 @@
 "use client";
 
-import { MATCH_THRESHOLD } from "@/lib/utils";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { formatDate, getScoreTier } from "@/lib/jobs-view";
 import type { DisplayJob, MatchTier, SortKey } from "@/lib/jobs-view";
 
-function getScoreColor(score: number) {
-  if (score >= MATCH_THRESHOLD) return "text-success";
-  if (score >= 60) return "text-info";
-  return "text-warning";
+const SCORE_TEXT_CLASS = {
+  high: "text-success",
+  mid: "text-info",
+  low: "text-warning",
+} as const;
+
+const SCORE_BAR_CLASS = {
+  high: "bg-success",
+  mid: "bg-info",
+  low: "bg-warning",
+} as const;
+
+function getScoreColor(score: number): string {
+  return SCORE_TEXT_CLASS[getScoreTier(score)];
 }
 
-function getScoreBarColor(score: number) {
-  if (score >= MATCH_THRESHOLD) return "bg-success";
-  if (score >= 60) return "bg-info";
-  return "bg-warning";
-}
-
-function formatDate(isoDate: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(isoDate));
+function getScoreBarColor(score: number): string {
+  return SCORE_BAR_CLASS[getScoreTier(score)];
 }
 
 type Props = {
@@ -44,6 +46,8 @@ export function JobsTable({
   sortKey,
   onSortKeyChange,
 }: Props) {
+  const router = useRouter();
+
   return (
     <div className="flex flex-col gap-0 rounded-2xl border border-border bg-surface shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
       <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center">
@@ -116,10 +120,17 @@ export function JobsTable({
               rows.map((job) => (
                 <tr
                   key={job.id}
-                  className="border-b border-border transition-colors hover:bg-surface-secondary last:border-b-0"
+                  onClick={() => router.push(`/find-jobs/${job.id}`)}
+                  className="cursor-pointer border-b border-border transition-colors hover:bg-surface-secondary last:border-b-0"
                 >
-                  <td className="px-5 py-4 text-sm font-medium text-text-primary">
-                    {job.company}
+                  <td className="px-5 py-4">
+                    <Link
+                      href={`/find-jobs/${job.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-sm font-medium text-text-primary transition-colors hover:text-accent"
+                    >
+                      {job.company}
+                    </Link>
                   </td>
                   <td className="px-5 py-4 text-sm text-text-primary">
                     {job.role}

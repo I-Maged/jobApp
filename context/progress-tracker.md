@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** 3 — Find Jobs Page
-**Last completed:** 11 Filter + Sort + Pagination
-**Next:** 12 Job Details Page — Full UI
+**Phase:** 4 — Job Details Page
+**Last completed:** 12 Job Details Page — Full UI
+**Next:** 13 Company Research Agent
 
 ---
 
@@ -36,7 +36,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 4 — Job Details Page
 
-- [ ] 12 Job Details Page — Full UI
+- [x] 12 Job Details Page — Full UI
 - [ ] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
@@ -49,6 +49,24 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 12 Job Details Page — Full UI (review fixes applied 2026-08-04)
+
+Post-build review (6 findings, all fixed): (1) `job_type` mapping now covers Adzuna's real `contract_type` values — `permanent`/`fulltime` → Full-time, `part_time`/`parttime` → Part-time, `temporary` → Temporary, `internship` → Internship, `contract` → Contract; (2) `job.company` is null-guarded before `.trim()` (schema column nullable); (3) skill/tech/source/bullet keys are composite (`${value}-${index}`) because matched/missing skills are stored verbatim from LLM output with no dedup; (4) empty `companyOverview` falls back to "No company overview available yet."; (5) score-tier boundaries centralized in `getScoreTier(score)` in `lib/jobs-view.ts` (JobInfo badge + JobsTable text/bar colors all map tier → classes; single `>= 70 / >= 60` definition); (6) byte-identical `BulletSection`/`BulletList` sub-components extracted into shared `components/ui/BulletList.tsx`. Re-verified: tsc, eslint, build clean.
+
+### 12 Job Details Page — Full UI
+
+- **Route: `app/find-jobs/[id]/page.tsx` is an async Server Component.** `params` is a `Promise<{ id: string }>` in Next.js 16 — `await params` per the dynamic-routes doc. Flow: `getCurrentUser()` → `fetchJob(id, user.id)` → `notFound()` if null. `fetchJob` added to `lib/jobs-data.ts` (`.eq("id", jobId).eq("user_id", userId).maybeSingle()`) — always scoped to the user, same defensive shape as `fetchProfile`. Missing/invalid ids hit a segment-level `app/find-jobs/[id]/not-found.tsx` (resolves the memory open question on 404 UX — standard `notFound()` + scoped not-found file, no custom error.js).
+- **Component split follows architecture.md, minus `JobActions`.** `components/job-details/`: `JobInfo.tsx` (header + 4 info cards), `MatchScore.tsx` (reason + skills), `JobDescription.tsx` (sections), `CompanyResearch.tsx` (dossier or empty state). The two external-link buttons (View Job Post secondary / Apply Now primary) live in the JobInfo header — a separate `JobActions.tsx` file was judged overhead for two `<a>` tags (same call as the deferred `JobFilters.tsx` in Phase 3). The page composes them in a `flex flex-col gap-6` shell matching the other app pages.
+- **Apply Now → `external_apply_url` (fallback `source_url`); View Job Post → `source_url`.** Both `target="_blank" rel="noopener noreferrer"`. Adzuna rows set both to `redirect_url` (Feature 10), so they diverge only for future URL-imported jobs.
+- **Company logo placeholder uses the brand gradient, not a solid token.** A 48px `rounded-xl` square with the company initial in `text-on-dark`, inline `linear-gradient(45deg, #7C5CFC 0%, #4A2EC5 100%)` — the same gradient the `Logo` component uses and the only accepted inline-style exception in the codebase.
+- **Match badge in the header uses tinted pill tokens, not the table's score colors.** `bg-success-lightest text-on-success-tint` (≥70) / `bg-info-lightest text-info-foreground` (60–69) / `bg-warning text-warning-foreground` (<60), boundaries from `MATCH_THRESHOLD`. Follows the "Text on Tinted Backgrounds" rule — `text-success-foreground` and `text-on-success-tint` are the same hex (#007A55), but `text-on-accent-tint` is used for missing-skill badges on `bg-accent-muted` (per the JobsPagination precedent).
+- **Matched/missing skill badges:** matched → `bg-success-lightest text-success-foreground`, missing → `bg-accent-muted text-on-accent-tint` — the project's Skills Badges tokens, pill shape (`rounded-full px-2 py-0.5 text-xs font-medium`) per the badge component token.
+- **`CompanyResearch` renders the full 9-field dossier when `company_research` exists, empty state otherwise.** The empty state has a disabled "Research Company" button (`title="Company research lands in Feature 13"`), matching the Feature 05/09 disabled-CTA pattern. `asDossier()` narrows `Record<string, unknown> | null` field-by-field (no Zod — same approach as `buildExtractedProfile`). Dossier fields render per build-plan: Overview/Why This Role paragraphs, Tech Stack tags, Culture/Your Edge/Gaps/Smart Questions/Interview Prep bullets, Sources as external links (hostname stripped).
+- **`formatDate` hoisted to `lib/jobs-view.ts`.** It existed inline in `JobsTable`; the details page needs the same format (Date Found card). Single definition, both import it — prevents date-format drift.
+- **JobsTable rows now link to `/find-jobs/[id]`.** This was explicitly deferred to Feature 12. Full-row click via `onClick` + `useRouter` with `cursor-pointer`, plus the company cell is a real `<Link>` (with `stopPropagation`) for keyboard accessibility — the two-nav race is avoided by stopping the click on the link.
+- **Feature 13 scope left untouched** — no `/api/agent/research` wiring, no changes to `agent/research.ts` or `actions/jobs.ts`. Research button is disabled placeholder only.
+- **Verified:** `npx tsc --noEmit`, `npx eslint .`, `npm run build` all pass. Dev smoke: `/find-jobs/some-job-id` → 307 `/login` (auth gate intact). The authenticated 404 + full render paths need a live session (post-OpenAI-fix) to verify in browser.
 
 ### 11 Filter + Sort + Pagination
 
