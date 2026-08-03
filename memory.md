@@ -1,50 +1,48 @@
-# Memory — Feature 09 Find Jobs Page — Full UI
+# Memory — Feature 11: Filter + Sort + Pagination wired to real DB data
 
 Last updated: 2026-08-03
 
 ## What was built
 
-### Feature 09 — Find Jobs Page — Full UI (static shell, no live logic)
-
-- **`app/find-jobs/page.tsx`** — new Server Component page shell. `export const metadata: Metadata = { title: "Find Jobs" }`, page heading + subheading, renders `SearchControls`, `JobsTable`, `JobsPagination`, and a static "Jobs by Adzuna" credit link. Build output shows `/find-jobs` as static (○); auth gating is enforced by `proxy.ts` (its matcher covers `/find-jobs/:path*`).
-- **`components/find-jobs/SearchControls.tsx`** — new Client Component. Search card with 3-col grid (`sm:grid-cols-[1fr_1fr_auto]`): Job Title input with embedded `lucide-react` Search icon, Location input, **disabled** Find Jobs button (`title="Find Jobs lands in Feature 10"`), and a static success banner ("Found 8 jobs and saved 4 strong matches.").
-- **`components/find-jobs/JobsTable.tsx`** — new Client Component. Single surface card containing the filter bar (text filter input + two `<select>`: All/High/Low Match and Match Score/Newest/Oldest — all inert in 09) and a 6-column table (COMPANY, ROLE, MATCH SCORE, SALARY EST., SOURCE, DATE FOUND). Six mock rows span all three score bands (96/94/91/88 green, 72 blue, 58 orange) so every color path renders. Table wrapped in `overflow-x-auto`.
-- **`components/find-jobs/JobsPagination.tsx`** — new Client Component. Static "Showing 1 to 6 of 24 results" plus Previous / 1 / 2 / 3 / Next cluster with `lucide-react` `ChevronLeft/Right`. Previous disabled (mock first page).
-- **`app/globals.css`** — added two new `@theme` tokens: `--color-on-accent-tint: #5E4CFF` and `--color-on-success-tint: #007A55`.
-- **`package.json`** — installed `lucide-react`. It had been listed as an approved dependency in `code-standards.md` since Phase 1 but was never actually installed.
-- **Docs updated** — `context/progress-tracker.md` (09 checked off, phase flipped to 3, next is 10, new 09 decision block), `context/ui-registry.md` (new Phase 3 section with imprints for the three components), `context/ui-tokens.md` (new "Text on Tinted Backgrounds" section).
+- **`lib/jobs-view.ts`** (new) — pure client-safe helpers: `DisplayJob`, `MatchTier`, `SortKey`, `toDisplayJob(job)`, `filterAndSortJobs(jobs, { text, tier, sort })`. Text filter on company/title, High/Low tiers from `MATCH_THRESHOLD`, sorts score-desc / newest / oldest (compares `Date.getTime()`).
+- **`lib/jobs-data.ts`** (new) — `fetchUserJobs(userId)` server helper: `jobs` scoped to `user_id`, ordered `found_at desc`; logs `[jobs-data]` and returns `[]` on error.
+- **`lib/utils.ts`** — added `JOBS_PAGE_SIZE = 20`.
+- **`app/find-jobs/page.tsx`** — now server-fetches `initialJobs` (all of the user's saved jobs) and passes them into `FindJobsClient`.
+- **`components/find-jobs/FindJobsClient.tsx`** — now the container owning `jobs`, `filterText`, `matchTier`, `sortKey`, `page`. Derives filtered/sorted list via `useMemo`, slices by page, and passes presentation-only props down. Search results **merge** (`[...results, ...prev]`), page resets to 1 on any change.
+- **`components/find-jobs/JobsTable.tsx`** — presentational: receives the page slice (`rows: DisplayJob[]`) + controlled filter/sort values/setters + `hasJobs`. `MOCK_JOBS` fallback deleted. Empty state differentiates "No jobs yet. Run a search…" vs "No jobs match your filters."
+- **`components/find-jobs/JobsPagination.tsx`** — controlled (`page`/`pageSize`/`totalCount`/`onPageChange`); "Showing X to Y of Z results"; windowed page list (≤7 pages shown, else first/last/current±1 with `…`); returns `null` when `totalCount === 0`.
+- **Docs updated:** `progress-tracker.md` (11 marked done, next = 12), `ui-registry.md` (FindJobsClient entry added; JobsTable/JobsPagination entries rewired), `ui-rules.md` + `ui-tokens.md` match-score tables reconciled to `MATCH_THRESHOLD`.
 
 ## Decisions made
 
-- **Three components, no `JobFilters.tsx`.** The build plan sketched four (`SearchControls`, `JobsTable`, `JobFilters`, `JobsPagination`), but the filter bar is visually a strip at the top of the table card and has no shared state with `SearchControls`. It lives inside `JobsTable.tsx` as a bordered top strip.
-- **`job_search_started` PostHog event NOT emitted from Feature 09.** The Find Jobs button is disabled placeholder UI; wiring the event lands in Feature 10 with the real Adzuna call so analytics stay clean of mock clicks.
-- **Match score thresholds follow `ui-rules.md` (≥80 green, 60–79 blue, <60 orange), NOT `components/homepage/JobsTablePreview.tsx` (≥90 / 70–89 / <70).** The homepage preview was built in Feature 01 from the original design description and predates the clarification in the token docs. Known deviation, not a bug — token-level fix deferred.
-- **Filter/sort/text-filter inputs are plain `<select defaultValue>` / `<input>` with no onChange.** Purely presentational in 09; Feature 11 owns the logic.
-- **No row navigation / no `onClick`.** Clicking a job row does nothing in 09; Feature 12 owns the Link-out to `/find-jobs/[id]`.
-- **Two new tint-companion tokens (`on-accent-tint`, `on-success-tint`) close a WCAG AA contrast gap.** `text-accent` (#7C5CFC) on `bg-accent-muted` (#FAF5FF), and `text-success` on `bg-success-lightest`, both fail WCAG AA. The rule is now documented: `*-foreground` tokens are only for filled dark/accent button surfaces; text on *light tinted* accent/success backgrounds uses `on-accent-tint` / `on-success-tint`. The Find Jobs success banner and highlighted current-page pagination button both follow this rule.
-- **Mock dataset uses 6 rows + "Showing 1 to 6 of 24 results" copy.** Matches the Feature 09 build plan verbatim ("Showing 1 to 6 of 24 results", "Found 8 jobs and saved 4 strong matches").
+- **List state lives in `FindJobsClient`** (not JobsTable) so the container knows the *filtered* total — the only correct place for pagination. JobsTable/JobsPagination are presentational.
+- **"All Matches" = all of the user's saved jobs, loaded server-side at page load** (build-plan Feature 11 spec), not just the last search's 10 rows.
+- **New search results merge (prepend) into the existing list** instead of replacing it — otherwise a new search clobbers the full collection. Re-running the same search still inserts duplicate DB rows (no dedupe anywhere — see open questions).
+- **`JOBS_PAGE_SIZE = 20`** from build-plan/`project-overview` spec wins over the Feature 09 mock copy ("Showing 1 to 6 of 24 results" was design-mock text).
+- **Match-score color boundaries now documented as derived from `MATCH_THRESHOLD`** (≥70 green, 60–69 blue, <60 orange) in both ui-rules.md and ui-tokens.md — resolves the last session's doc-reconciliation open question. Code was already on this.
+- Adzuna source badge renders gray (`bg-surface-secondary text-text-secondary`), no new token added.
 
 ## Problems solved
 
-- **`import { Link } from "next/link"` failed tsc.** `next/link` in Next.js 16 has no named `Link` export — it's a default export. Fixed with `import Link from "next/link"` in `app/find-jobs/page.tsx`.
-- **`npm` PowerShell script blocked by execution policy on this machine.** Use `npm.cmd` (and `npx.cmd`) in the shell tool — the `.ps1` shim is disabled.
-- **Dev server smoke-tested `/find-jobs`** — route returned 200 through `proxy.ts`. Server stopped before ending the session.
+- **Static pagination** ("Showing 1 to 6 of 24 results" hardcoded) → fully controlled by filtered totals.
+- **`MOCK_JOBS` fallback before first search** → real DB data with a neutral empty state (open question from last session closed).
+- **ui-rules.md (80/60) and ui-tokens.md (90/70/50) contradicted the code and each other** on match-score colors — both reconciled to the code's `MATCH_THRESHOLD`-derived rule.
 
 ## Current state
 
-- **Works:** `/find-jobs` shell renders; `tsc --noEmit`, `npm run lint`, `npm run build` all clean. `/find-jobs` registered as a static route. `proxy.ts` auth gate confirmed redirecting unauthenticated hits.
-- **Not yet wired (by design):** Find Jobs button (Feature 10), filter/sort/pagination state (Feature 11), row click → details page navigation (Feature 12). Success banner is a static mock.
-- **Uncommitted:** four new/changed source files (`app/find-jobs/page.tsx`, `components/find-jobs/SearchControls.tsx`, `components/find-jobs/JobsTable.tsx`, `components/find-jobs/JobsPagination.tsx`, `app/globals.css`, `package.json`/`package-lock.json`) plus the docs (`context/progress-tracker.md`, `context/ui-registry.md`, `context/ui-tokens.md`). Prior sessions' Feature 07/08 changes were also uncommitted — check `git status` for the combined working-tree state.
-- **Carried over from prior sessions (still open):** the live round-trip verification for Feature 07 (`/api/resume/extract`) and Feature 08 (`/api/resume/generate`) against a real authenticated profile has never been done in a browser. PDF multi-page overflow is unverified. `library-docs.md` InsForge section still has the outdated legacy `client.from(...)` pattern flagged in Feature 06.
+- `npx.cmd tsc --noEmit`, `npx.cmd eslint .`, and `npm.cmd run build` all pass. Dev smoke test: `/find-jobs` → 307 to `/login` (auth gate intact), `/api/agent/find` → clean `401 {"success":false,"error":"Not signed in"}`.
+- Feature 11 is complete; Phase 3 is done. **Next feature: 12 Job Details Page — Full UI.**
+- `/imprint` was not run this session — `ui-registry.md` was updated manually instead (FindJobsClient added, JobsTable/JobsPagination entries rewritten). Run `/imprint` in the next session if strict skill compliance is wanted.
+- Scoring end-to-end still blocked by the OpenAI key HTTP 429 (unchanged since last session).
 
 ## Next session starts with
 
-**Feature 10 — Adzuna Job Discovery** (Phase 3, per build-plan.md). Run `/architect` before building. Scope: build `agent/adzuna.ts` and `agent/matcher.ts`, wire `app/api/agent/find/route.ts` (POST, `getCurrentUser()` auth), enable the Find Jobs button in `SearchControls.tsx`, and emit `job_search_started` + `job_found` PostHog events. The UI shell for displaying results is already in place from Feature 09 — Feature 10 swaps the mock rows for real data.
+1. **Feature 12 — Job Details Page — Full UI** (`app/find-jobs/[id]/page.tsx` + `components/job-details/*`): back to Jobs link, job header (company/logo placeholder/title/match score badge/View Job Post), info cards (salary/location/job type/date found), AI Match Reasoning, Required Skills vs Your Profile (green/red badges), Job Description, Company Research card with empty state + Research Company button (wiring lands in 13), Apply Now → `external_apply_url` in new tab. Job data comes from the DB row (already populated by Phase 3); wire a `fetchJob` server helper (pattern: `lib/jobs-data.ts` + `fetchProfile`).
+2. Resolve the **OpenAI 429** — still the operational blocker for live scoring verification.
+3. With a working OpenAI key, run a real search and verify: live rows replace the empty state, banner counts are honest, pagination over multiple saved searches, 429 concurrency response.
 
 ## Open questions
 
-- **Live round-trip confirmation for Features 07 and 08** — neither the extract nor the generate route has been confirmed working end-to-end against a real signed-in profile/PDF (carried over, still open).
-- **PDF visual QA for the generated resume** — a long profile could overflow one A4 page; `@react-pdf/renderer` does not auto-flow text to a second page without explicit layout handling (carried over, still open).
-- **`library-docs.md` InsForge section** still has the outdated `client.from(...)` legacy pattern flagged in Feature 06 — deferred doc refresh (carried over, still open).
-- **Adzuna API credentials** must be present in `.env.local` (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`) before Feature 10 can be exercised end-to-end. Verify with the user before starting Feature 10.
-- **Country detection for Adzuna** — build-plan defaults to `'us'` and supports `gb`/`au`/`ca`; the Feature 09 UI has no country picker, so Feature 10 needs to decide whether country inference is part of the first pass or a follow-up.
+- **Duplicate rows on re-search:** each Adzuna run inserts fresh `jobs` rows with new uuids, and the list now merges — re-searching the same title+location accumulates duplicate postings. Dedupe by `source_url` at insert time, or accept and let the user filter? (Not in feature 11 scope; flag before Feature 13.)
+- Is the OpenAI 429 quota exhaustion, rate limit, or an invalid-key state? (Error body was empty.)
+- Feature 12 will need the job-details page to handle a missing/invalid job id gracefully (404 path) — confirm the desired UX.

@@ -163,11 +163,11 @@ border-radius: 9999px
 background track: #E7EAF3
 ```
 
-Fill color by score:
+Fill color by score (boundaries derive from `MATCH_THRESHOLD` in `lib/utils.ts` — never hardcode):
 
-- 80-100%: `#10B981` (green)
-- 60-79%: `#61A8FF` (blue)
-- Below 60%: `#FF8904` (orange)
+- ≥70: `#10B981` (green)
+- 60–69: `#61A8FF` (blue)
+- Below 60: `#FF8904` (orange)
 
 ---
 

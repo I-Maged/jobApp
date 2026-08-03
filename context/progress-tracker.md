@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 3 — Find Jobs Page
-**Last completed:** 10 Adzuna Job Discovery
-**Next:** 11 Filter + Sort + Pagination
+**Last completed:** 11 Filter + Sort + Pagination
+**Next:** 12 Job Details Page — Full UI
 
 ---
 
@@ -32,7 +32,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 09 Find Jobs Page — Full UI
 - [x] 10 Adzuna Job Discovery
-- [ ] 11 Filter + Sort + Pagination
+- [x] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
 
@@ -49,6 +49,18 @@ Update this file after every completed feature. Any AI agent reading this should
 ---
 
 ## Decisions Made During Build
+
+### 11 Filter + Sort + Pagination
+
+- **List state lifted into `FindJobsClient` (the container), not the table.** `FindJobsClient` now owns `jobs`, `filterText`, `matchTier`, `sortKey`, and `page`. It derives the filtered/sorted list via `useMemo` → `filterAndSortJobs()` and slices by page. `JobsTable` and `JobsPagination` are now strictly presentational — `JobsTable` receives the current page slice plus controlled filter/sort values and setters; `JobsPagination` receives `page`/`pageSize`/`totalCount`/`onPageChange`. This is what makes pagination correct: the container is the only place that knows the *filtered* total.
+- **New `lib/jobs-view.ts` — pure, client-safe display helpers.** `DisplayJob` (id, company, role, matchScore, salary, source, dateFound), `toDisplayJob(job)`, and `filterAndSortJobs(jobs, { text, tier, sort })`. Text search lowercases company + title; High/Low tiers derive from `MATCH_THRESHOLD` (not hardcoded 70); sorts are score desc / newest (dateFound desc) / oldest (dateFound asc). Date sorting compares `Date.getTime()` — robust for both DB `timestamptz` ISO strings and date-only values (localeCompare on the raw string would also work but is format-fragile). The old `MOCK_JOBS` mapping in `JobsTable` is deleted.
+- **Initial data fetched server-side in `app/find-jobs/page.tsx`.** New `lib/jobs-data.ts` `fetchUserJobs(userId)` queries `jobs` scoped to `user_id`, ordered `found_at desc` (matches the `library-docs.md` pattern), and is passed as `initialJobs` into `FindJobsClient`. This satisfies "All Matches tab — all jobs for current user" from `build-plan.md` Feature 11 and kills the `MOCK_JOBS` fallback (resolves the memory open question: replaced with a neutral empty state). Fetch failure logs `[jobs-data]` and returns `[]` so the page still renders.
+- **Search results merge into the list instead of replacing it.** `handleResults` does `setJobs((prev) => [...results, ...prev])` — the latest run's saved jobs go on top while previously saved jobs stay visible. Without this, a new search would clobber "all jobs for current user" down to the last 10-row Adzuna page. Page resets to 1 on new results and on every filter/sort change (container change handlers).
+- **`JOBS_PAGE_SIZE = 20` added to `lib/utils.ts`** next to `MATCH_THRESHOLD` — the single source for page size, per the `code-standards.md` "single source" pattern. The Feature 09 mock text "Showing 1 to 6 of 24 results" was design-mock copy; the functional spec (`build-plan.md` + `project-overview.md` both say "20 jobs per page") wins.
+- **Pagination windowing.** `JobsPagination` shows every page up to 7; beyond that it renders first / last / current ± 1 with `…` gaps. `totalCount === 0` returns `null` (no pagination row over the empty-state table). Prev/Next disabled at bounds. Page-number buttons keep the registry styling: current = `bg-accent-muted text-on-accent-tint`, others `text-text-secondary hover:bg-surface-secondary`, separated by `border-l border-border`.
+- **Empty-state wording now distinguishes the two cases.** `JobsTable` takes `hasJobs`; with zero saved jobs it shows "No jobs yet. Run a search to find matching roles." and with jobs-but-no-filter-match it shows "No jobs match your filters." (was a single filter-flavored string).
+- **Match-score color docs reconciled to code.** Code uses `MATCH_THRESHOLD` (≥70 green, 60–69 blue, <60 orange). `ui-rules.md` (documented 80–100/60–79/<60) and `ui-tokens.md` (documented 90–100/70–89/50–69) updated to match — the last-session open question is resolved.
+- **Source badge for Adzuna rows.** `toDisplayJob` maps `source === "search"` → badge text "Adzuna" (gray `bg-surface-secondary text-text-secondary` pill — matches the "URL" token class since there is no Adzuna-specific badge token; consistent with the "Jobs by Adzuna" credit). The `source_url`-as-badge-text fallback from the old code is dropped.
 
 ### 06 Profile Save Logic
 

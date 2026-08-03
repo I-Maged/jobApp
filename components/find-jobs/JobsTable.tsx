@@ -1,57 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { Job } from "@/types";
 import { MATCH_THRESHOLD } from "@/lib/utils";
-
-type MockJob = {
-  company: string;
-  role: string;
-  matchScore: number;
-  salary: string;
-  source: "LinkedIn" | "URL";
-  dateFound: string;
-};
-
-const MOCK_JOBS: MockJob[] = [
-  { company: "Vercel", role: "Senior Frontend Engineer", matchScore: 94, salary: "$160k - $200k", source: "LinkedIn", dateFound: "2026-08-01" },
-  { company: "Stripe", role: "Full Stack Engineer", matchScore: 88, salary: "$180k - $240k", source: "URL", dateFound: "2026-08-01" },
-  { company: "Linear", role: "Product Engineer", matchScore: 96, salary: "$150k - $190k", source: "LinkedIn", dateFound: "2026-07-31" },
-  { company: "Notion", role: "Frontend Engineer", matchScore: 72, salary: "$130k - $170k", source: "LinkedIn", dateFound: "2026-07-30" },
-  { company: "OpenAI", role: "Full Stack Engineer", matchScore: 91, salary: "$200k - $280k", source: "LinkedIn", dateFound: "2026-07-29" },
-  { company: "Figma", role: "Design Engineer", matchScore: 58, salary: "$170k - $220k", source: "URL", dateFound: "2026-07-28" },
-];
-
-type DisplayJob = {
-  id: string;
-  company: string;
-  role: string;
-  matchScore: number;
-  salary: string;
-  source: string;
-  dateFound: string;
-};
-
-function toDisplayJobs(jobs: Job[] | undefined): DisplayJob[] {
-  if (!jobs) {
-    return MOCK_JOBS.map((m) => ({
-      id: `mock-${m.company}-${m.role}`,
-      ...m,
-    }));
-  }
-  return jobs.map((j) => ({
-    id: j.id,
-    company: j.company,
-    role: j.title,
-    matchScore: j.match_score,
-    salary: j.salary ?? "N/A",
-    source: j.source === "search" ? "Adzuna" : j.source_url || "URL",
-    dateFound: j.found_at,
-  }));
-}
-
-type SortKey = "score" | "newest" | "oldest";
-type MatchTier = "all" | "high" | "low";
+import type { DisplayJob, MatchTier, SortKey } from "@/lib/jobs-view";
 
 function getScoreColor(score: number) {
   if (score >= MATCH_THRESHOLD) return "text-success";
@@ -74,41 +24,26 @@ function formatDate(isoDate: string) {
 }
 
 type Props = {
-  jobs?: Job[];
+  rows: DisplayJob[];
+  hasJobs: boolean;
+  filterText: string;
+  onFilterTextChange: (value: string) => void;
+  matchTier: MatchTier;
+  onMatchTierChange: (tier: MatchTier) => void;
+  sortKey: SortKey;
+  onSortKeyChange: (sort: SortKey) => void;
 };
 
-export function JobsTable({ jobs }: Props) {
-  const [filterText, setFilterText] = useState("");
-  const [matchTier, setMatchTier] = useState<MatchTier>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("score");
-
-  const rows = useMemo(() => {
-    const all = toDisplayJobs(jobs);
-    const q = filterText.trim().toLowerCase();
-
-    let list = all.filter((job) => {
-      if (
-        q &&
-        !job.company.toLowerCase().includes(q) &&
-        !job.role.toLowerCase().includes(q)
-      ) {
-        return false;
-      }
-      if (matchTier === "high" && job.matchScore < MATCH_THRESHOLD) return false;
-      if (matchTier === "low" && job.matchScore >= MATCH_THRESHOLD) return false;
-      return true;
-    });
-
-    list = [...list].sort((a, b) => {
-      if (sortKey === "score") return b.matchScore - a.matchScore;
-      if (sortKey === "newest")
-        return b.dateFound.localeCompare(a.dateFound);
-      return a.dateFound.localeCompare(b.dateFound);
-    });
-
-    return list;
-  }, [jobs, filterText, matchTier, sortKey]);
-
+export function JobsTable({
+  rows,
+  hasJobs,
+  filterText,
+  onFilterTextChange,
+  matchTier,
+  onMatchTierChange,
+  sortKey,
+  onSortKeyChange,
+}: Props) {
   return (
     <div className="flex flex-col gap-0 rounded-2xl border border-border bg-surface shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
       <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center">
@@ -116,13 +51,13 @@ export function JobsTable({ jobs }: Props) {
           type="text"
           placeholder="Filter by company or role..."
           value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
+          onChange={(e) => onFilterTextChange(e.target.value)}
           className="block w-full flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
         <div className="flex items-center gap-3">
           <select
             value={matchTier}
-            onChange={(e) => setMatchTier(e.target.value as MatchTier)}
+            onChange={(e) => onMatchTierChange(e.target.value as MatchTier)}
             className="block w-32 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           >
             <option value="all">All Matches</option>
@@ -131,7 +66,7 @@ export function JobsTable({ jobs }: Props) {
           </select>
           <select
             value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
             className="block w-32 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           >
             <option value="score">Match Score</option>
@@ -172,7 +107,9 @@ export function JobsTable({ jobs }: Props) {
                   colSpan={6}
                   className="px-5 py-8 text-center text-sm text-text-muted"
                 >
-                  No jobs match your filters.
+                  {hasJobs
+                    ? "No jobs match your filters."
+                    : "No jobs yet. Run a search to find matching roles."}
                 </td>
               </tr>
             ) : (

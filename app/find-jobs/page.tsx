@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FindJobsClient } from "@/components/find-jobs/FindJobsClient";
 import { getCurrentUser } from "@/lib/get-current-user";
+import { fetchUserJobs } from "@/lib/jobs-data";
 
 export const metadata: Metadata = {
   title: "Find Jobs",
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
 
 export default async function FindJobsPage() {
   const user = await getCurrentUser();
+  const initialJobs = user ? await fetchUserJobs(user.id) : [];
 
   return (
     <main className="w-full bg-background">
@@ -23,7 +25,7 @@ export default async function FindJobsPage() {
           </p>
         </div>
 
-        <FindJobsClient userId={user?.id ?? ""} />
+        <FindJobsClient userId={user?.id ?? ""} initialJobs={initialJobs} />
 
         <p className="text-xs text-text-muted">
           Jobs by{" "}

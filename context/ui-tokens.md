@@ -170,14 +170,13 @@ Used for: any foreground (text, icon path, divider) rendered on a dark filled su
 
 ### Match Score Colors
 
-Match score bars and indicators use gradient stops based on score range:
+Match score bars and indicators use gradient stops based on score range. Boundaries derive from `MATCH_THRESHOLD` in `lib/utils.ts` (≥70 is a "high match") — never hardcode:
 
 | Score Range | Color  | Token                                  |
 | ----------- | ------ | -------------------------------------- |
-| 90-100%     | Green  | `text-success` / `bg-success-lightest` |
-| 70-89%      | Green  | `text-success` / `bg-success-light`    |
-| 50-69%      | Orange | `text-warning`                         |
-| Below 50%   | Gray   | `text-text-muted`                      |
+| ≥70         | Green  | `text-success` / `bg-success`          |
+| 60-69       | Blue   | `text-info` / `bg-info`                |
+| Below 60    | Orange | `text-warning` / `bg-warning`          |
 
 ### Skills Badges
 

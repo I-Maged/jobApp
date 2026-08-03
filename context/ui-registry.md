@@ -253,9 +253,11 @@ Client Component. Search card at the top of `/find-jobs` with Job Title input (S
 ### JobsTable — `components/find-jobs/JobsTable.tsx`
 
 File: `components/find-jobs/JobsTable.tsx`
-Last updated: 2026-08-03
+Last updated: 2026-08-03 (Feature 11 — presentational: receives the current page slice + controlled filter/sort props; MOCK_JOBS fallback removed)
 
-Client Component. Single bordered surface card containing (a) the filter bar as a top strip separated by a bottom border, (b) the jobs table, (c) horizontally-scrollable overflow on narrow viewports. Filter + sort inputs are inert-controlled (no state) — Feature 11 will wire them.
+Client Component. Single bordered surface card containing (a) the filter bar as a top strip separated by a bottom border, (b) the jobs table, (c) horizontally-scrollable overflow on narrow viewports. Filter/sort values and setters are controlled by `FindJobsClient` — this component renders only.
+
+Props: `{ rows: DisplayJob[]; hasJobs: boolean; filterText: string; onFilterTextChange: (v: string) => void; matchTier: MatchTier; onMatchTierChange: (t: MatchTier) => void; sortKey: SortKey; onSortKeyChange: (s: SortKey) => void }` — `DisplayJob` / `MatchTier` / `SortKey` from `@/lib/jobs-view`.
 
 | Property              | Class |
 | --------------------- | ----- |
@@ -281,17 +283,19 @@ Client Component. Single bordered surface card containing (a) the filter bar as 
 
 **Pattern notes:**
 - Filter bar lives INSIDE the table card (border-b separator), not as a separate card. Visually one surface; functionally three inputs above the rows.
-- Plain `<select defaultValue>` elements with no `onChange` — purely presentational in Feature 09, wired in Feature 11.
-- Mock job data covers all three score bands (96/94/91/88 green, 72 blue, 58 orange) so every color path renders in the static shell.
-- `matchScore` thresholds come from `ui-rules.md` (80/60), NOT from `components/homepage/JobsTablePreview.tsx` (90/70) — intentional deviation; the homepage preview predates the rule clarification.
-- No `onClick` / no row navigation in Feature 09 — clicking a row is a no-op; Feature 12 owns the Link-out to `/find-jobs/[id]`.
+- Controlled `<select value={matchTier}>` / `<select value={sortKey}>` + controlled text input — state lives in `FindJobsClient` (Feature 11). Changing any filter resets the page to 1 in the container.
+- `matchScore` thresholds come from `MATCH_THRESHOLD` in `lib/utils.ts` (≥70 green, 60–69 blue, <60 orange) via `getScoreColor`/`getScoreBarColor` — NOT from `components/homepage/JobsTablePreview.tsx` (90/70); the homepage preview predates the rule clarification.
+- Empty state differentiates the two cases via `hasJobs`: no saved jobs at all → "No jobs yet. Run a search to find matching roles."; jobs exist but filters exclude everything → "No jobs match your filters."
+- `rows` is already the paginated slice — `FindJobsClient` computes filtered → sorted → sliced. No row navigation in Feature 11 — clicking a row is a no-op; Feature 12 owns the Link-out to `/find-jobs/[id]`.
 
 ### JobsPagination — `components/find-jobs/JobsPagination.tsx`
 
 File: `components/find-jobs/JobsPagination.tsx`
-Last updated: 2026-08-03
+Last updated: 2026-08-03 (Feature 11 — controlled; wired to real filtered totals)
 
-Client Component. Static "Showing 1 to 6 of 24 results" left, page-button cluster right.
+Client Component. "Showing X to Y of Z results" left, page-button cluster right. Fully controlled.
+
+Props: `{ page: number; pageSize: number; totalCount: number; onPageChange: (page: number) => void }` — renders `null` when `totalCount === 0`.
 
 | Property              | Class |
 | --------------------- | ----- |
