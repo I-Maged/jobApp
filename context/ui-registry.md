@@ -201,14 +201,32 @@ Centered shell for login + callback routes. No nav/footer, brand logo above the 
 
 ---
 
-## Phase 3 — Find Jobs Components (imprinted 2026-08-03)
+## Shared UI Primitives
+
+### ErrorBanner — `components/ui/ErrorBanner.tsx`
+
+Inline error banner for forms and search controls. Red border, surface background, error text color. Used by `SearchControls`, `ProfileForm` (×2), and any future error banner.
+
+| Property         | Class |
+| ---------------- | ----- |
+| Wrapper          | `rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error` |
+| Aria             | `role="alert"` on the wrapper div |
+| Content          | `children: ReactNode` — plain text |
+
+**Pattern notes:**
+- Extracted from three identical inline implementations (SearchControls and ProfileForm ×2). Changes to error styling go here once.
+- Follows the project's no-raw-hex rule: uses `border-error` / `text-error` tokens, not hardcoded colors.
+
+---
+
+## Phase 3 — Find Jobs Components (imprinted 2026-08-03, wired 2026-08-03)
 
 ### SearchControls — `components/find-jobs/SearchControls.tsx`
 
 File: `components/find-jobs/SearchControls.tsx`
-Last updated: 2026-08-03
+Last updated: 2026-08-03 (Feature 10 — Find Jobs button is live, owns jobTitle/location/search status state)
 
-Client Component (will own controlled state in Feature 10). Search card at the top of `/find-jobs` with Job Title input (Search icon inside, left-aligned), Location input, disabled Find Jobs button, and a static green success banner.
+Client Component. Search card at the top of `/find-jobs` with Job Title input (Search icon inside, left-aligned), Location input, live Find Jobs button (spinner while pending), and a banner area with three variants (success / empty / error).
 
 | Property              | Class |
 | --------------------- | ----- |
@@ -218,14 +236,19 @@ Client Component (will own controlled state in Feature 10). Search card at the t
 | Label                 | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
 | Input (no icon)       | `block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent` |
 | Icon-input wrapper    | `relative`, inner `<Search>` icon `absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted`, input uses `pl-10 pr-3` |
-| Find Jobs button      | `inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60` |
+| Find Jobs button      | `inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60` (disabled only while a search is in flight; label swaps to "Searching..." with spinning `Loader2`) |
 | Success banner        | `rounded-md border border-success-lightest bg-success-lightest px-4 py-2.5 text-sm font-medium text-on-success-tint` |
+| Empty banner          | `rounded-md border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-secondary` |
+| Error banner          | `<ErrorBanner>{message}</ErrorBanner>` — shared component from `components/ui/ErrorBanner.tsx` |
 
 **Pattern notes:**
 - Two input variants: iconless Location uses the same baseline class only; icon Title wraps the `<Search />` absolutely and pads the input left to `pl-10`.
 - Find Jobs button is fixed-height `h-10` and bottom-aligned via `sm:items-end` wrapper (`flex items-end`) so the button sits baseline-flush with the inputs.
-- Button is disabled in Feature 09 (`title="Find Jobs lands in Feature 10"`) — mirrors the Feature 05 CTA convention.
-- Success banner uses the new `text-on-success-tint` token — not `text-accent`/`text-success`, which are below WCAG AA against `bg-success-lightest`. See `ui-tokens.md` "Text on Tinted Backgrounds".
+- Feature 10 wired the button: `useState` for `jobTitle`, `location`, `status` (`idle | loading | success | empty | error`), `result` counts, `errorMessage`. `useTransition` wraps the fetch; the button disables and shows `<Loader2 className="h-4 w-4 animate-spin" />` while pending. Enter key inside either input triggers the same handler as the button.
+- Banner variants swap inline inside the existing card — no new UI surface. Success shows real counts (`"Found X jobs and saved Y strong matches."`); empty uses a neutral gray tone so a "no results" state doesn't read as a failure; error uses the same `border-error bg-surface text-error` pattern as the Profile page error banners.
+- Success/empty/error banners only render when their `status` matches — the card collapses back to just the three inputs when `status === "idle"` or `"loading"`.
+- `userId` is passed as a prop from the parent Server Component (`app/find-jobs/page.tsx`); the Client Component never calls `getCurrentUser()` directly.
+- Error banner uses the shared `<ErrorBanner>` component (`components/ui/ErrorBanner.tsx`) — the raw class string it replaced previously existed verbatim in `ProfileForm.tsx` and was extracted to prevent drift.
 
 ### JobsTable — `components/find-jobs/JobsTable.tsx`
 

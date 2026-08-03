@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SearchControls } from "@/components/find-jobs/SearchControls";
-import { JobsTable } from "@/components/find-jobs/JobsTable";
-import { JobsPagination } from "@/components/find-jobs/JobsPagination";
+import { FindJobsClient } from "@/components/find-jobs/FindJobsClient";
+import { getCurrentUser } from "@/lib/get-current-user";
 
 export const metadata: Metadata = {
   title: "Find Jobs",
 };
 
-export default function FindJobsPage() {
+export default async function FindJobsPage() {
+  const user = await getCurrentUser();
+
   return (
     <main className="w-full bg-background">
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 px-6 py-8 md:px-8 md:py-10">
@@ -22,25 +23,19 @@ export default function FindJobsPage() {
           </p>
         </div>
 
-        <SearchControls />
+        <FindJobsClient userId={user?.id ?? ""} />
 
-        <div className="flex flex-col gap-6">
-          <JobsTable />
-
-          <JobsPagination />
-
-          <p className="text-xs text-text-muted">
-            Jobs by{" "}
-            <Link
-              href="https://www.adzuna.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-text-primary underline decoration-text-muted underline-offset-2 transition-colors hover:text-accent"
-            >
-              Adzuna
-            </Link>
-          </p>
-        </div>
+        <p className="text-xs text-text-muted">
+          Jobs by{" "}
+          <Link
+            href="https://www.adzuna.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-text-primary underline decoration-text-muted underline-offset-2 transition-colors hover:text-accent"
+          >
+            Adzuna
+          </Link>
+        </p>
       </div>
     </main>
   );

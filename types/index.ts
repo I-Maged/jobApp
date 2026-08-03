@@ -84,3 +84,53 @@ export const EMPTY_EDUCATION: Education = {
   institutionName: "",
   graduationYear: "",
 };
+
+export type AdzunaJob = {
+  id: string;
+  title: string;
+  company: { display_name: string };
+  location: { display_name: string };
+  description: string;
+  redirect_url: string;
+  salary_min?: number;
+  salary_max?: number;
+  salary_is_predicted?: "0" | "1";
+  contract_type?: string;
+  created: string;
+  category?: { tag: string; label: string };
+};
+
+export type ScoredJob = {
+  matchScore: number;
+  matchReason: string;
+  matchedSkills: string[];
+  missingSkills: string[];
+};
+
+export type Job = {
+  id: string;
+  run_id: string | null;
+  user_id: string;
+  source: "search" | "url";
+  source_url: string;
+  external_apply_url: string;
+  title: string;
+  company: string;
+  location: string;
+  salary: string | null;
+  job_type: string;
+  about_role: string;
+  responsibilities: string[] | null;
+  requirements: string[] | null;
+  nice_to_have: string[] | null;
+  benefits: string[] | null;
+  about_company: string | null;
+  match_score: number;
+  match_reason: string;
+  matched_skills: string[];
+  missing_skills: string[];
+  company_research: Record<string, unknown> | null;
+  found_at: string;
+};
+
+

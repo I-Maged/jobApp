@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { saveProfile } from "@/actions/profile";
+import { ErrorBanner } from "@/components/ui/ErrorBanner";
 import type { ExtractedProfile } from "@/lib/profile-extract";
 import type {
   ExperienceLevel,
@@ -501,20 +502,10 @@ export function ProfileForm({ initialEmail, initial, hasResume }: Props) {
           </div>
         ) : null}
         {status === "error" && errorMessage ? (
-          <div
-            role="alert"
-            className="rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error"
-          >
-            {errorMessage}
-          </div>
+          <ErrorBanner>{errorMessage}</ErrorBanner>
         ) : null}
         {extractStatus === "error" && extractError ? (
-          <div
-            role="alert"
-            className="rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error"
-          >
-            {extractError}
-          </div>
+          <ErrorBanner>{extractError}</ErrorBanner>
         ) : null}
         {extractStatus === "idle" && extractedFields ? (
           <div

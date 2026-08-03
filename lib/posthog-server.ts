@@ -36,3 +36,39 @@ export async function captureServerEvent(
     await client.shutdown();
   }
 }
+
+export async function captureServerEventsBatch(
+  userId: string,
+  events: Array<{ event: string; properties?: EventProperties }>,
+): Promise<void> {
+  const apiKey = process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+  const host = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+
+  if (!apiKey || !host) {
+    if (process.env.NODE_ENV === "development" && events.length > 0) {
+      console.warn(
+        "[posthog-server] posthog not configured — skipping batch",
+        events.length,
+        "events",
+      );
+    }
+    return;
+  }
+
+  if (events.length === 0) return;
+
+  const client = new PostHog(apiKey, { host });
+
+  try {
+    for (const e of events) {
+      client.capture({
+        distinctId: userId,
+        event: e.event,
+        properties: e.properties,
+      });
+    }
+    await client.flush();
+  } finally {
+    await client.shutdown();
+  }
+}

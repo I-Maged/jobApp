@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 3 — Find Jobs Page
-**Last completed:** 09 Find Jobs Page — Full UI
-**Next:** 10 Adzuna Job Discovery
+**Last completed:** 10 Adzuna Job Discovery
+**Next:** 11 Filter + Sort + Pagination
 
 ---
 
@@ -31,7 +31,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 3 — Find Jobs Page
 
 - [x] 09 Find Jobs Page — Full UI
-- [ ] 10 Adzuna Job Discovery
+- [x] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
@@ -170,9 +170,47 @@ Update this file after every completed feature. Any AI agent reading this should
 - Testimonial avatar uses `user-icon.png` cropped to circular frame.
 - BottomCTA uses `bg-accent-muted` (subtle purple tint) — design didn't specify but subtle accent fits the visual hierarchy.
 
+### 10 Adzuna Job Discovery
+
+**Post-`@review` fixes applied:** the original implementation was reviewed against 6 axes (security, performance, business logic, deploy safety, duplication, dead code). Four CRITICAL and four WARNING findings were fixed before this feature was considered complete. Changes are folded into the decisions below.
+
+- **Route handler `app/api/agent/find/route.ts` (POST) owns orchestration, auth, DB writes, and PostHog.** Flow: `getCurrentUser()` → validate `{ jobTitle, location? }` body → `fetchProfile(user.id)` → **concurrency guard (429 Rejected Runs)** → insert `agent_runs` status=running → `searchJobs(jobTitle, location)` from `agent/adzuna.ts` → parallel score via `Promise.all` over `agent/matcher.ts` `scoreJobAgainstProfile()` → insert scored rows into `jobs` → emit `captureServerEvent(user.id, "job_found", { matchScore })` per row in parallel (`Promise.allSettled`) → update run to status=completed with counts → return `{ success, totalFound, strongMatches, results }`.
+  - **Concurrency rate limit:** Every request checks `agent_runs` for a row with `user_id = auth.uid()` AND `status = 'running'` AND `started_at >= now() - 30s`. If one exists, the route returns 429 *before* creating a new run row or hitting Adzuna/OpenAI. Client-side button disable is preserved; the 429 guards against scripted replays and multi-tab usage.
+  - **InsForge client hoisting:** `createInsforgeServer()` is constructed exactly once per request at the top of the handler (after body validation) and reused for the 429 check, agent_runs write, jobs insert, and run completion. `getCurrentUser()` and `fetchProfile()` still own their internal instances.
+  - Adzuna failures mark the run failed and return 502; insert failures mark failed and return 500; outer catch also marks failed when `runId` exists so rows never stay stuck in `running`.
+- **Salary math bug fixed in `mapToJobInsert`.** The original placement of the division operators meant `Math.round(adzuna.salary_max ?? adzuna.salary_min) / 1000` produced `$150.5k` instead of `$151k` for high-end salary ranges. Parentheses now wrap the division so both ends use `Math.round(value / 1000)` identically.
+- **`agent/adzuna.ts` timeouts the fetch.** `AbortSignal.timeout(10_000)` on the Adzuna request ensures a hung third-party API cannot stall the route indefinitely. When the timeout fires, it throws into the existing catch which returns 502 and marks the run failed.
+- **`agent/matcher.ts` — OpenAI client hoisted to module scope with explicit config.** Solves three `CRITICAL` findings from review:
+  - **Env var check:** `if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY must be set")` — matches the pattern already used by Adzuna.
+  - **Timeout:** `timeout: 15_000` on the constructor prevents a single stalled GPT-4o stream from blocking the entire `Promise.all` fan-out.
+  - **No retries:** `maxRetries: 0` — per-job try/catch in the route handles failure semantics; retrying inside the SDK during parallel execution would compound costs.
+  - The same `new OpenAI()` call is no longer recreated inside `scoreJobAgainstProfile` for each job.
+- **PostHog events fire concurrently via `Promise.allSettled`.** `captureServerEvent` creates a fresh PostHog client per call and calls `await shutdown()`. The original `for...of await` added ~10 network round-trips to the critical response path. `allSettled` fires all events in parallel and lets the response return even if a single event fails.
+- **`ErrorBanner` extracted to `components/ui/ErrorBanner.tsx`.** The `rounded-md border border-error bg-surface px-4 py-2.5 text-sm font-medium text-error` class string existed verbatim in three places (SearchControls once, ProfileForm twice). All three now import `@/components/ui/ErrorBanner`. Prevents design-system drift.
+- **SearchControls error banner now uses `ErrorBanner`.** Loading state, Enter key submissions, and banner text remain unchanged.
+- **`agent/adzuna.ts` matches library-docs.md exactly.** `category=it-jobs`, `results_per_page=10`, `content-type=application/json`, `where` only set when location non-empty, country hardcoded to `us` for this pass (UK/AU/CA inference from location string deferred to a follow-up).
+- **`agent/matcher.ts` owns GPT-4o scoring.** System prompt enumerates the exact response shape. `temperature: 0.3`, `max_tokens: 300`, `response_format: { type: "json_object" }`. Clamps score to 0-100 server-side; filters non-string entries from skill arrays; empty description still parses.
+- **Parallel scoring, not sequential.** `Promise.all` over up to 10 GPT-4o calls with per-job try/catch — a single bad job does not fail the request.
+- **SearchControls.tsx owns all UI state locally.** Banner variants remain: success uses `bg-success-lightest text-on-success-tint`, empty uses `bg-background border-border text-text-secondary`, error uses new `<ErrorBanner>` component.
+- **`/find-jobs` page remains a Server Component** calling `getCurrentUser()` and passing `userId` as prop. `proxy.ts` matcher still bounces unauthenticated users.
+- **Dead code removed.** `AgentRun` type in `types/index.ts` was added but never imported by any file. Removed to keep the type surface minimal.
+- **No `agent_logs` writes.** Agent errors surface via `[agent/find]` / `[agent/matcher]` console.error prefixes and 4xx/5xx responses. Wiring to the `agent_logs` table is a deferred follow-up.
+- **`JobsTable`, `JobsPagination` stay mock for Feature 11.** The success banner connects to real DB rows but the table rows themselves remain the six mock entries until 11 swaps them for live data.
+- **`agent/adzuna.ts` matches library-docs.md exactly.** `category=it-jobs`, `results_per_page=10`, `content-type=application/json`, `where` only set when location non-empty, country hardcoded to `us` for this pass (UK/AU/CA inference from location string deferred to a follow-up). Throws on non-2xx with `Adzuna API error: <status>` so the caller's catch can mark the run failed.
+- **`agent/matcher.ts` owns GPT-4o scoring.** System prompt enumerates the exact response shape (`matchScore` 0-100 int, `matchReason` one paragraph, `matchedSkills/missingSkills` string arrays). `temperature: 0.3`, `max_tokens: 300`, `response_format: { type: "json_object" }`. Clamps score to 0-100 server-side; filters non-string entries from skill arrays; empty description still parses.
+- **Parallel scoring, not sequential.** `Promise.all` over 10 GPT-4o calls with per-job try/catch — a single bad job does not fail the request; it's logged via `console.error("[agent/matcher]")` and dropped from the insert set. Decision made to keep user-facing latency at ~5s instead of ~30s sequential.
+- **`SearchControls.tsx` owns all UI state locally.** `jobTitle` / `location` input state, `status: "idle" | "loading" | "success" | "empty" | "error"`, result counts, and the banner are all component-local. The page passes a single `userId: string` prop. Loading state disables the button and swaps the search icon for a spinning `Loader2`. Enter key inside either input triggers the same handler as the button.
+- **`job_search_started` fires client-side from SearchControls before the fetch.** Carries `{ userId, jobTitle, location }` — ids come from the parent Server Component since the button click doesn't have direct session access.
+- **`/find-jobs` page flipped from static (○) to dynamic (ƒ).** `app/find-jobs/page.tsx` is now `async`, calls `await getCurrentUser()`, and passes `userId={user?.id ?? ""}` into `<SearchControls>`. `proxy.ts` matcher still bounces unauthenticated users before this page ever runs; the empty-string fallback on `userId` is defensive only.
+- **Banner variants.** Success (totalFound > 0) uses the existing `bg-success-lightest text-on-success-tint` styling with real numbers; empty-result uses a neutral `bg-background border-border` variant with "No jobs found for that search. Try a different title or location."; error uses `border-error bg-surface text-error` shape (matching the same error banner pattern used on the Profile page).
+- **`lib/utils.ts` re-created with `MATCH_THRESHOLD = 70`.** The file was listed in code-standards but missing from disk. Strong-match count is computed server-side as `savedJobs.filter(j => j.match_score >= MATCH_THRESHOLD).length` to keep UI and DB in lockstep.
+- **`types/index.ts` extended.** Added `AdzunaJob`, `ScoredJob`, `Job`, `AgentRun` — all match `architecture.md` schema. Job/AgentRun shapes include nullable fields exactly as the tables declare them so PostgREST round-trips don't trip TS.
+- **No `agent_logs` writes.** Per the in-flight plan, agent errors surface via `[agent/find]` / `[agent/matcher]` console.error prefixes and 4xx/5xx responses. Wiring to the `agent_logs` table is a deferred follow-up — no helper exists and the shape isn't exercised yet.
+- **`JobsTable`, `JobsPagination` stay mock for Feature 11.** Per the in-flight plan, the success banner connects to real DB rows but the table rows themselves remain the six mock entries until 11 swaps them for live data.
+
 ### 09 Find Jobs Page — Full UI
 
-- **Three components, no `JobFilters.tsx`.** `components/find-jobs/SearchControls.tsx` (title/location inputs + disabled accent only-for-level-1-leveling the integration game in order to control Future 10), `components/find-jobs/JobsTable.tsx` (filter bar inlined as the table card's header + 6-row static table), `components/find-jobs/JobsPagination.tsx` (static "Showing 1 to 6 of 24 results" + page buttons). The filter bar has no shared state with SearchControls, so it lives inside the table card rather than as a fourth file. Registered in `ui-registry.md`.
+- **Three components, no `JobFilters.tsx`.** `components/find-jobs/SearchControls.tsx` (title/location inputs + disabled accent button), `components/find-jobs/JobsTable.tsx` (filter bar inlined as the table card's header + 6-row static table), `components/find-jobs/JobsPagination.tsx` (static "Showing 1 to 6 of 24 results" + page buttons). The filter bar has no shared state with SearchControls, so it lives inside the table card rather than as a fourth file. Registered in `ui-registry.md`.
 - **`lucide-react` installed** (v.x latest at build time) and added to the package.json deps. Was listed as approved in `code-standards.md` since Phase 1 but not actually installed until this feature. Used in `SearchControls` (Search icon on the button) and `JobsPagination` (ChevronLeft/Right).
 - **Find Jobs button intentionally disabled with `title="Find Jobs lands in Feature 10"`.** Follows the Feature 05 pattern for disabled CTAs pointing at the owning feature. `job_search_started` PostHog event NOT emitted here — analytics stay clean of mock clicks; wired in Feature 10.
 - **Filter dropdowns/sort/text-filter present but inert.** Plain `<select defaultValue>` and `<input>`, no state or change handlers yet. Feature 11 owns the logic.
