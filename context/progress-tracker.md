@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 4 — Job Details Page
-**Last completed:** 12 Job Details Page — Full UI
-**Next:** 13 Company Research Agent
+**Last completed:** 13 Company Research Agent
+**Next:** 14 Dashboard Page — Full UI
 
 ---
 
@@ -37,7 +37,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 4 — Job Details Page
 
 - [x] 12 Job Details Page — Full UI
-- [ ] 13 Company Research Agent
+- [x] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
 
@@ -250,6 +250,16 @@ Post-build review (6 findings, all fixed): (1) `job_type` mapping now covers Adz
 - **`"Jobs by Adzuna"` credit rendered below the pagination row** — plain sentence with a text-link on "Adzuna". Build output shows `/find-jobs` as static (○), gated at runtime by `proxy.ts`.
 - **Two new tint tokens added to `@theme` in `globals.css`:** `--color-on-accent-tint: #5E4CFF` and `--color-on-success-tint: #007A55`. These close a naming trap: `*-foreground` tokens in `ui-tokens.md` are reserved for filled dark surfaces and accent buttons — NOT for text on light `*-muted` / `*-lightest` tinted backgrounds. `text-accent` on `bg-accent-muted` renders #7C5CFC-on-#FAF5FF (soft-low-contrast), so the Find Jobs success banner and the highlighted current page button use `text-on-success-tint` / `text-on-accent-tint` (WCAG-AA-passing against the tinted backgrounds). Documented in `ui-tokens.md` and `ui-registry.md`.
 - **Success banner in `SearchControls` is static mock text:** "Found 8 jobs and saved 4 strong matches." Only shown as a visual placeholder; Feature 10 swaps to conditional rendering based on the Adzuna run result.
+
+### 13 Company Research Agent (2026-08-04)
+
+- **Installed `@browserbasehq/sdk@2.16.0`, `@browserbasehq/stagehand@3.7.1`, `zod@4.4.3`** (all approved in `code-standards.md`). Stagehand 3.7.1 is a **major API break from the v2 examples in `library-docs.md`** — v2 `extract({ instruction, schema })` / `act({ action })` / `activePage()` were replaced. `library-docs.md` updated with the real v3 API; do not copy v2 examples.
+- **`lib/browserbase.ts`** — Browserbase client + `createBrowserbaseSession()` (single session, `timeout: 120`, `projectId` from env). **`lib/stagehand.ts`** — Stagehand v3 init with `env: "BROWSERBASE"`, `browserbaseSessionID`, `model: { modelName: "gpt-4o", apiKey }`. Both throw if env vars missing (graceful degradation handled in `agent/research.ts`).
+- **`agent/research.ts`** — `researchCompany(job, profile)`: (1) derive homepage URL by following `job.source_url` redirects → strip subdomain (fallback `https://www.{company}.com`); (2) one Browserbase session + Stagehand: homepage `extract()` with zod `HOMEPAGE_SCHEMA`, then up to 3 internal sub-pages (about > engineering > blog > product > team > careers priority, deduped, same-root only) each `extract()`ed; (3) GPT-4o synthesis into the 9-field `CompanyDossier`. Every browser step is try/catch'd and logged — **a browser failure never returns an empty dossier**: synthesis falls back to company name + job description + profile. `stagehand.close()` in `finally`. Session creation, extract failures, and 404s degrade to synthesis, never crash the route.
+- **`app/api/agent/research/route.ts`** — `POST { jobId }`, auth via `getCurrentUser()`, loads job + profile (`fetchProfile`), 401/400/404s, **idempotency guard**: returns existing `company_research` if present (button only renders from empty state anyway). Runs research, `update({ company_research })` scoped to `user_id`, fires `company_researched` PostHog event, `revalidatePath("/find-jobs/[id]")`. No `maxDuration` — browser runs on Browserbase, not the server.
+- **`components/job-details/ResearchCompanyButton.tsx`** (new client component) — POSTs to the route with `useTransition` + `router.refresh()` on success (matches SearchControls pattern), shows spinner + helper text while pending, `ErrorBanner` on failure. `CompanyResearch.tsx` empty state now uses it (jobId prop threaded from the details page).
+- **Current env state:** `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` NOT in `.env.local` — in-browser research returns a clean 500 ("Internal server error") until the keys are added. The full end-to-end flow also still needs OpenAI to stop 429ing. Homepage derivation + synthesis-fallback paths are the immediately testable parts once keys land.
+- **Post-review fixes applied (same day):** (1) homepage/sub-page navigation now `goto(waitUntil: "load")` then best-effort `waitForLoadState("networkidle", 10s)` in its own try/catch — a slow site no longer kills the whole homepage research step; (2) `stripSubdomain` is TLD-aware via a `COMPOUND_TLDS` set (`jobs.bbc.co.uk` → `bbc.co.uk`, not `co.uk`); (3) `deriveHomepageUrl` only fetches `http:`/`https:` URLs (SSRF hardening); (4) PostHog `captureServerEvent` is `.catch`ed in the route so a telemetry failure can't 500 a successfully-saved dossier; (5) if `createStagehand` throws after the session is created, the session is released via `bb.sessions.update(id, { status: "REQUEST_RELEASE" })` instead of leaking until its 120s timeout; (6) removed the now-unused `createBrowserbaseSession` helper. All checks re-run clean.
 
 ---
 

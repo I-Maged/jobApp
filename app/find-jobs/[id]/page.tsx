@@ -40,7 +40,11 @@ export default async function JobDetailsPage({
         <JobInfo job={job} />
         <MatchScore job={job} />
         <JobDescription job={job} />
-        <CompanyResearch research={job.company_research} company={job.company} />
+        <CompanyResearch
+          research={job.company_research}
+          company={job.company}
+          jobId={job.id}
+        />
       </div>
     </main>
   );

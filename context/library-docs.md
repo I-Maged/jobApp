@@ -280,8 +280,8 @@ const session = await bb.sessions.create({
 });
 ```
 
-**Important — Browserbase runs independently from your Next.js server:**
-Browserbase sessions run on Browserbase's cloud infrastructure, not inside your Next.js API route. The API route triggers the Browserbase session and returns a response while the session continues running independently on Browserbase's platform. Do not add `maxDuration` or any timeout configuration to Next.js API routes to accommodate Browserbase session length.
+**Important — the browser runs on Browserbase, not on your Next.js server:**
+Browserbase hosts the browser on their cloud infrastructure. Your API route drives it over CDP and blocks until research completes. Do not add `maxDuration` or any timeout configuration to Next.js API routes to accommodate Browserbase session length.
 
 **Rules:**
 
@@ -299,6 +299,8 @@ Browserbase sessions run on Browserbase's cloud infrastructure, not inside your 
 
 ### Initialisation
 
+**Stagehand 3.x is installed — the API differs from Stagehand 2.x docs/training data.** Do not copy v2 examples. Create the Browserbase session first, then connect Stagehand to it via `browserbaseSessionID`. Both live in `lib/browserbase.ts` / `lib/stagehand.ts` — always import from there.
+
 ```typescript
 import { Stagehand } from "@browserbasehq/stagehand";
 
@@ -307,48 +309,64 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  model: { modelName: "openai/gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
+  model: { modelName: "gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
   disablePino: true,
 });
 
 await stagehand.init();
-const page = stagehand.context.activePage()!;
+const page = stagehand.context.pages()[0]; // or activePage()
+```
+
+**Navigation** uses Stagehand's own CDP `Page` (Playwright-style, not the v2 Puppeteer page):
+
+```typescript
+await page.goto(url, { waitUntil: "networkidle", timeoutMs: 30_000 });
+await page.url(); // synchronous current URL
+```
+
+**Always close the session** — wrap in try/finally so a failed extract never leaks the browser:
+
+```typescript
+try {
+  await stagehand.init();
+  // ... research
+} finally {
+  try {
+    await stagehand.close();
+  } catch (error) {
+    console.error("failed to close stagehand", error);
+  }
+}
 ```
 
 ### extract()
 
+`extract(instruction, schema, options?)` — three positional args (v2's `{ instruction, schema }` object is gone). Requires `zod` (installed).
+
 ```typescript
 import { z } from "zod";
 
-const result = await stagehand.extract({
-  instruction:
-    "Extract the company overview, main product description, and any technology mentions from this page.",
-  schema: z.object({
-    companyOverview: z.string().optional(),
-    mainProduct: z.string().optional(),
-    techMentions: z.array(z.string()).optional(),
-    navLinks: z
-      .array(
-        z.object({
-          label: z.string(),
-          url: z.string(),
-        }),
-      )
-      .optional(),
+const result = await stagehand.extract(
+  "Extract the company overview, main product description, and any technology mentions from this page.",
+  z.object({
+    companyOverview: z.string(),
+    mainProduct: z.string(),
+    techMentions: z.array(z.string()),
+    navLinks: z.array(z.object({ label: z.string(), url: z.string() })),
   }),
-});
+  { timeout: 60_000 }, // ms, optional
+);
 ```
 
 ### act()
 
+`act(instruction, options?)` — a plain string instruction (v2's `{ action }` object is gone). Always wrap in try/catch.
+
 ```typescript
-// Always wrap in try/catch
 try {
-  await stagehand.act({
-    action: "Click the About link in the navigation",
-  });
+  await stagehand.act("Click the About link in the navigation");
 } catch (error) {
-  await logAgentError(jobId, null, error);
+  console.error("[agent] act failed", error);
 }
 ```
 

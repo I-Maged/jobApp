@@ -555,9 +555,9 @@ Server Component. Job Description card: `about_role` paragraph, then Responsibil
 ### CompanyResearch — `components/job-details/CompanyResearch.tsx`
 
 File: `components/job-details/CompanyResearch.tsx`
-Last updated: 2026-08-04 (Feature 12)
+Last updated: 2026-08-04 (Feature 13)
 
-Server Component. Renders the full 9-field dossier when `company_research` is present, otherwise a centered empty state with a disabled Research Company button (wiring lands in Feature 13).
+Server Component. Renders the full 9-field dossier when `company_research` is present, otherwise a centered empty state with the wired `ResearchCompanyButton` (posts to `/api/agent/research`, Feature 13). Takes `jobId` prop threaded from the details page.
 
 | Property            | Class |
 | ------------------- | ----- |
@@ -565,7 +565,7 @@ Server Component. Renders the full 9-field dossier when `company_research` is pr
 | Empty-state wrapper | `flex flex-col items-center gap-3 rounded-2xl ... p-6 text-center` |
 | Empty-state icon    | `Search` (lucide) `h-8 w-8 text-text-muted` |
 | Empty-state copy    | `max-w-md text-sm leading-5 text-text-secondary` |
-| Research button     | primary button classes, `disabled` + `title="Company research lands in Feature 13"` |
+| Research button     | `ResearchCompanyButton` (client) — primary button + spinner + helper copy + `ErrorBanner` |
 | Dossier subheading  | `text-sm font-semibold text-text-primary` (paragraph sections) |
 | Tech Stack tag      | `inline-flex items-center rounded-full bg-surface-secondary px-2 py-0.5 text-xs font-medium text-text-secondary` |
 | Bullet list         | `mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-text-secondary` (shared `components/ui/BulletList.tsx`) |
@@ -576,3 +576,22 @@ Server Component. Renders the full 9-field dossier when `company_research` is pr
 - `asDossier()` narrows `Record<string, unknown> | null` field-by-field in plain TS (no Zod) — same approach as the profile extractor. Fields not present render nothing; empty `companyOverview` falls back to "No company overview available yet." (review finding #4).
 - Dossier sections: Overview + Why This Role are paragraphs; Tech Stack is tags; Culture / Your Edge / Gaps to Address / Smart Questions / Interview Prep are bullets; Sources are external links.
 - Only renders dossier sections with content — a thin dossier never shows empty subheadings.
+
+### ResearchCompanyButton — `components/job-details/ResearchCompanyButton.tsx`
+
+File: `components/job-details/ResearchCompanyButton.tsx`
+Last updated: 2026-08-04 (Feature 13)
+
+Client Component. Renders in the CompanyResearch empty state. Posts `{ jobId }` to `/api/agent/research`, then `router.refresh()` so the Server Component re-renders with the saved dossier.
+
+| Property            | Class |
+| ------------------- | ----- |
+| Button (idle)       | primary button: `mt-2 inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark` |
+| Button (pending)    | same + `disabled:cursor-not-allowed disabled:opacity-60`, `Loader2` (lucide) `h-4 w-4 animate-spin`, label "Researching…" |
+| Helper copy         | `max-w-md text-sm leading-5 text-text-secondary` ("Browsing {company}'s public pages…") |
+| Error               | shared `components/ui/ErrorBanner.tsx` |
+
+**Pattern notes:**
+- Mirrors the SearchControls fetch pattern: `useTransition` (React 19 async transition), `setErrorMessage` on failure, no `useState` for status — `isPending` from the transition drives the spinner.
+- Returns a fragment (button + helper + error) rendered inside the empty state's `flex flex-col items-center gap-3` wrapper.
+- No `captureEvent` on click — the `company_researched` PostHog event is fired server-side by the route after the dossier persists.

@@ -1,9 +1,11 @@
 import { Search } from "lucide-react";
 import { BulletList } from "@/components/ui/BulletList";
+import { ResearchCompanyButton } from "@/components/job-details/ResearchCompanyButton";
 
 type Props = {
   research: Record<string, unknown> | null;
   company: string;
+  jobId: string;
 };
 
 type ResearchDossier = {
@@ -75,7 +77,7 @@ function SourceLinks({ sources }: { sources: string[] }) {
   );
 }
 
-export function CompanyResearch({ research, company }: Props) {
+export function CompanyResearch({ research, company, jobId }: Props) {
   const dossier = asDossier(research);
 
   if (!dossier) {
@@ -90,14 +92,7 @@ export function CompanyResearch({ research, company }: Props) {
           company&apos;s public pages and summarize their stack, culture, and
           what to expect.
         </p>
-        <button
-          type="button"
-          disabled
-          title="Company research lands in Feature 13"
-          className="mt-2 inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Research Company
-        </button>
+        <ResearchCompanyButton jobId={jobId} company={company} />
       </section>
     );
   }
