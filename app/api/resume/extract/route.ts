@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
-import OpenAI from "openai";
 import { createInsforgeServer } from "@/lib/insforge-server";
+import { AI_MODEL, openai } from "@/lib/ai";
 import { buildExtractedProfile, EXTRACT_SYSTEM_PROMPT } from "@/lib/profile-extract";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const MIN_EXTRACT_CHARS = 50;
-const MAX_TEXT_CHARS = 12000; // keep prompt + completion within gpt-4o context headroom
+const MAX_TEXT_CHARS = 12000; // keep prompt + completion within model context headroom
 
 // pdf-parse v2 spawns a pdfjs worker that Next's Turbopack bundler cannot
 // resolve from its default path. The producer's own `pdf-parse/worker`
@@ -91,11 +91,10 @@ export async function POST() {
 
     const resumeText = trimmed.slice(0, MAX_TEXT_CHARS);
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
     let rawJson: unknown;
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+      const completion = await openai().chat.completions.create({
+        model: AI_MODEL,
         response_format: { type: "json_object" },
         temperature: 0.3,
         max_tokens: 800,

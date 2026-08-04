@@ -1,5 +1,5 @@
-import OpenAI from "openai";
 import type { Profile, WorkExperienceRole } from "@/types";
+import { AI_MODEL, openai } from "@/lib/ai";
 
 export type ResumeContent = {
   summary: string;
@@ -31,8 +31,6 @@ Rules:
 - Keep every bullet to one line. No fluff.`;
 
 export async function generateResumeContent(profile: Profile): Promise<ResumeContent> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-
   const rolesText = profile.workExperience.map((r: WorkExperienceRole) => ({
     company: r.company || "[Company]",
     title: r.title || "[Role]",
@@ -52,8 +50,8 @@ export async function generateResumeContent(profile: Profile): Promise<ResumeCon
     education: profile.education,
   });
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const completion = await openai().chat.completions.create({
+    model: AI_MODEL,
     response_format: { type: "json_object" },
     temperature: 0.7,
     max_tokens: 1000,

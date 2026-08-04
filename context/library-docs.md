@@ -303,18 +303,21 @@ Browserbase hosts the browser on their cloud infrastructure. Your API route driv
 
 ```typescript
 import { Stagehand } from "@browserbasehq/stagehand";
+import { AI_BASE_URL, AI_MODEL, getAiApiKey } from "@/lib/ai";
 
 const stagehand = new Stagehand({
   env: "BROWSERBASE",
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  model: { modelName: "gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
+  model: {
+    modelName: `openai/${AI_MODEL}`,
+    apiKey: getAiApiKey(),
+    baseURL: AI_BASE_URL,
+    openaiEndpointFormat: "chat",
+  },
   disablePino: true,
 });
-
-await stagehand.init();
-const page = stagehand.context.pages()[0]; // or activePage()
 ```
 
 **Navigation** uses Stagehand's own CDP `Page` (Playwright-style, not the v2 Puppeteer page):
@@ -480,7 +483,7 @@ Skills: ${profile.skills.join(", ")}
 Work history: ${JSON.stringify(profile.work_experience)}`;
 
 const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+  model: AI_MODEL,
   response_format: { type: "json_object" },
   temperature: 0.4,
   messages: [
@@ -509,7 +512,7 @@ const response = await openai.chat.completions.create({
 - Always use `extract()` with a Zod schema — never parse raw HTML or use regex
 - Always wrap every `act()` and `extract()` in try/catch
 - Always call `await stagehand.close()` when done — ends the Browserbase session
-- Model is always `gpt-4o` — never use other models
+- Model comes from `AI_MODEL` in `lib/ai.ts` — never hardcode a model string at call sites
 - Temperature is `0.4` for synthesis — grounded but flexible enough to make real connections
 - Max 3 sub-pages — never exceed this on free plan
 - Always close session in finally block — never leave sessions open even if research fails
@@ -517,19 +520,19 @@ const response = await openai.chat.completions.create({
 - If browser research returns empty — still run synthesis with job + profile only
 - yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
 
-## OpenAI GPT-4o
+## AI Model — OpenRouter
 
 **Check first:** Check AGENTS.md for an installed OpenAI skill. The skill will have the latest API patterns and model capabilities.
+
+All model calls go through `lib/ai.ts` — the single source for the OpenAI-compatible client. It reads `OPENROUTER_API_KEY` (required), `AI_MODEL` (default `google/gemma-4-26b-a4b-it:free`), and `AI_BASE_URL` (default `https://openrouter.ai/api/v1`). Never construct an `OpenAI` client or hardcode a model name anywhere else.
 
 ### Structured JSON Response
 
 ```typescript
-import OpenAI from "openai";
+import { AI_MODEL, openai } from "@/lib/ai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+const response = await openai().chat.completions.create({
+  model: AI_MODEL,
   response_format: { type: "json_object" },
   temperature: 0.3,
   messages: [
@@ -547,6 +550,8 @@ const response = await openai.chat.completions.create({
 const result = JSON.parse(response.choices[0].message.content!);
 ```
 
+Use `openaiFast()` (15s timeout) for parallel fan-out like job scoring; `openai()` (60s) for single calls.
+
 **Temperature settings:**
 
 - `0.3` — matching, scoring, extraction, research synthesis — deterministic results
@@ -561,7 +566,7 @@ const result = JSON.parse(response.choices[0].message.content!);
 
 **Rules:**
 
-- Model string is always `'gpt-4o'` — never use other model names
+- Model string always comes from `AI_MODEL` in `lib/ai.ts` — never hardcode model names
 - Always use `response_format: { type: 'json_object' }` for structured data
 - Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
 - Always validate parsed JSON before using — wrap in try/catch

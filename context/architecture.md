@@ -403,13 +403,19 @@ const data = await response.json();
 
 ```typescript
 // Single session — visits company homepage and sub pages sequentially
+import { AI_BASE_URL, AI_MODEL, getAiApiKey } from "@/lib/ai";
+
 const stagehand = new Stagehand({
   env: "BROWSERBASE",
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  modelName: "gpt-4o",
-  modelClientOptions: { apiKey: process.env.OPENAI_API_KEY! },
+  model: {
+    modelName: `openai/${AI_MODEL}`,
+    apiKey: getAiApiKey(),
+    baseURL: AI_BASE_URL,
+    openaiEndpointFormat: "chat",
+  },
 });
 
 await stagehand.init();

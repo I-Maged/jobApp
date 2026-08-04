@@ -1,13 +1,13 @@
 import { Stagehand } from "@browserbasehq/stagehand";
+import { AI_BASE_URL, AI_MODEL, getAiApiKey } from "@/lib/ai";
 
 export function createStagehand(sessionId: string): Stagehand {
   const browserbaseApiKey = process.env.BROWSERBASE_API_KEY;
   const projectId = process.env.BROWSERBASE_PROJECT_ID;
-  const openaiApiKey = process.env.OPENAI_API_KEY;
 
-  if (!browserbaseApiKey || !projectId || !openaiApiKey) {
+  if (!browserbaseApiKey || !projectId) {
     throw new Error(
-      "BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID, and OPENAI_API_KEY must be set",
+      "BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID must be set",
     );
   }
 
@@ -16,7 +16,12 @@ export function createStagehand(sessionId: string): Stagehand {
     apiKey: browserbaseApiKey,
     projectId,
     browserbaseSessionID: sessionId,
-    model: { modelName: "gpt-4o", apiKey: openaiApiKey },
+    model: {
+      modelName: `openai/${AI_MODEL}`,
+      apiKey: getAiApiKey(),
+      baseURL: AI_BASE_URL,
+      openaiEndpointFormat: "chat",
+    },
     disablePino: true,
   });
 }

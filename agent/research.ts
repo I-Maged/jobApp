@@ -1,20 +1,9 @@
-import OpenAI from "openai";
 import { z } from "zod";
 import { Stagehand } from "@browserbasehq/stagehand";
 import { createBrowserbase } from "@/lib/browserbase";
 import { createStagehand } from "@/lib/stagehand";
+import { AI_MODEL, openai } from "@/lib/ai";
 import type { Job, Profile } from "@/types";
-
-const apiKey = process.env.OPENAI_API_KEY;
-if (!apiKey) {
-  throw new Error("OPENAI_API_KEY must be set");
-}
-
-const openai = new OpenAI({
-  apiKey,
-  timeout: 30_000,
-  maxRetries: 0,
-});
 
 export type CompanyDossier = {
   companyOverview: string;
@@ -424,8 +413,8 @@ async function synthesizeDossier(
   profile: Profile,
   research: CollectedResearch | null,
 ): Promise<CompanyDossier> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const response = await openai().chat.completions.create({
+    model: AI_MODEL,
     response_format: { type: "json_object" },
     temperature: 0.4,
     max_tokens: 800,

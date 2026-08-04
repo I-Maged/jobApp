@@ -253,7 +253,9 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts |
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
-| `OPENAI_API_KEY`                | agent/ functions       |
+| `OPENROUTER_API_KEY`            | lib/ai.ts (required)             |
+| `AI_MODEL`                      | lib/ai.ts (default `google/gemma-4-26b-a4b-it:free`) |
+| `AI_BASE_URL`                   | lib/ai.ts (default `https://openrouter.ai/api/v1`) |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` | `instrumentation-client.ts`, `lib/posthog-server.ts` |
