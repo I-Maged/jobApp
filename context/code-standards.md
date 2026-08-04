@@ -316,7 +316,7 @@ Approved dependencies for this project:
 - `@insforge/sdk` — InsForge client (includes `/ssr` and `/ssr/middleware` subpaths)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
-- `openai` — GPT-4o API
+- `openai` — OpenAI-compatible SDK client, routed to OpenRouter via lib/ai.ts
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client
 - `@react-pdf/renderer` — Resume PDF generation

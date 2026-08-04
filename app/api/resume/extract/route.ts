@@ -4,7 +4,7 @@ import { createInsforgeServer } from "@/lib/insforge-server";
 import { AI_MODEL, openai } from "@/lib/ai";
 import { buildExtractedProfile, EXTRACT_SYSTEM_PROMPT } from "@/lib/profile-extract";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { join } from "node:path";
 
 const MIN_EXTRACT_CHARS = 50;
 const MAX_TEXT_CHARS = 12000; // keep prompt + completion within model context headroom
@@ -15,16 +15,22 @@ const MAX_TEXT_CHARS = 12000; // keep prompt + completion within model context h
 // @napi-rs/canvas, which is not an ESM-placeable native asset and breaks the
 // production build. We only need text extraction here (no images/screenshots),
 // so we read pdfjs-dist's legacy worker bundled file directly and pass its
-// base64 data URL into PDFParse.setWorker once per process. This must run at
-// request time (not module load) — Next's build-time page-data collection
-// evaluates the route module with no real file descriptors, so a top-level
-// fs read throws EBADF on fstat.
+// base64 data URL into PDFParse.setWorker once per process. Turbopack rewrites
+// require.resolve("...") into a virtual `[project]` module path that readFileSync
+// cannot open (ENOENT), so the file path is built from process.cwd() at runtime.
+// This must run at request time (not module load) — Next's build-time page-data
+// collection evaluates the route module with no real file descriptors, so a
+// top-level fs read throws EBADF on fstat.
 let workerConfigured = false;
 function ensureWorker() {
   if (workerConfigured) return;
-  const requireFromImportMeta = createRequire(import.meta.url);
-  const workerFile = requireFromImportMeta.resolve(
-    "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+  const workerFile = join(
+    process.cwd(),
+    "node_modules",
+    "pdfjs-dist",
+    "legacy",
+    "build",
+    "pdf.worker.min.mjs",
   );
   PDFParse.setWorker(
     "data:text/javascript;base64," + readFileSync(workerFile).toString("base64"),

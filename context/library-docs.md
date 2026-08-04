@@ -257,7 +257,7 @@ const jobRecord = {
 - Never pass `where` if location is empty — omit the parameter entirely
 - `source` is always `'search'` for Adzuna jobs — never any other value
 - `salary_is_predicted: "1"` means Adzuna estimated the salary — this is normal
-- Adzuna description is a snippet — GPT-4o scores from it, not a full description
+- Adzuna description is a snippet — AI scores from it, not a full description
 - Default country to `'us'` — support `gb`, `au`, `ca` as alternatives
 
 ---
@@ -381,7 +381,7 @@ Replace the existing Stagehand "Company Research Pattern" section in library-doc
 
 ### Company Research Pattern
 
-Three-step process: homepage extraction → sub-page extraction → GPT-4o synthesis.
+Three-step process: homepage extraction → sub-page extraction → AI synthesis.
 Job description and user profile come from DB — never re-fetch what you already have.
 Browser's only job is the company website.
 
@@ -442,7 +442,7 @@ const subPageData = await stagehand.extract({
   }),
 });
 
-// Step 3 — GPT-4o synthesis (after browser closes)
+// Step 3 — AI synthesis (after browser closes)
 // Feed three data sources: company research + job from DB + profile from DB
 const systemPrompt = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
 
@@ -744,9 +744,12 @@ await parser.destroy(); // free the worker
 const extractedText = textResult.text; // concatenated plain text from all pages
 ```
 
+**Worker setup (required — Turbopack gotcha):** pdf-parse v2 spawns a pdfjs worker. Configure it once per process BEFORE the first parse via `PDFParse.setWorker("data:text/javascript;base64,...")`, reading the bundled worker file at request time. Do NOT resolve the file with `require.resolve(...)` — Turbopack statically rewrites it into a virtual `[project]` module path that `readFileSync` cannot open (`ENOENT: [project]/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs [app-route] (ecmascript)`). Build the path from `process.cwd()` at runtime instead (a dynamic path Turbopack cannot rewrite). See `ensureWorker()` in `app/api/resume/extract/route.ts` for the working pattern.
+
 **Rules:**
 
 - Server-side only — never import in client components
+- Call `PDFParse.setWorker(dataUrl)` once per process before parsing — see the worker setup note above
 - `new PDFParse({ data })` accepts a `Uint8Array` (convert a `Buffer` via `new Uint8Array(buffer)`) — do NOT pass the `Buffer` directly
 - `parser.getText()` returns a `TextResult` with `.text` (concatenated) and `.pages` (per-page `PageTextResult[]`) — use `.text` for full-document extraction
 - Always call `await parser.destroy()` after use to release the pdfjs worker
