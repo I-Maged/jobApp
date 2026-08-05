@@ -1,39 +1,43 @@
-# Memory — Feature 16 Recent Activity Real Data
+# Memory — Feature 17 Analytics Charts PostHog Data
 
 Last updated: 2026-08-05
 
 ## What was built
 
-- **`lib/dashboard-data.ts`** — `getMockActivity()` deleted, replaced with async `fetchRecentActivity(userId)`: two parallel (`Promise.all`) scoped queries — `agent_runs` completed runs (`id, job_title_searched, jobs_found, started_at`, ordered desc, limit 8) and `jobs` where `company_research IS NOT NULL` (`id, company, found_at`, ordered desc, limit 8). Entries merged, sorted desc by **raw** timestamp, sliced to `ACTIVITY_LIMIT = 8` before formatting. Run rows → `Found X jobs for [jobTitle]` (kind `job_search`), research rows → `Researched [company]` (kind `company_research`); ids prefixed `run-`/`job-` to avoid key collisions. New module-private `formatTimeAgo` (Just now < 1 min, `Nm ago`, `Nh ago`, Yesterday, `N days ago`, then `Month D` fallback; `Date.parse` NaN → Just now).
-- **`app/dashboard/page.tsx`** — `const activity = user ? await fetchRecentActivity(user.id) : []` replaces `getMockActivity()`.
-- **Docs:** `progress-tracker.md` marks Feature 16 done (next = 17) + decision entry; `ui-registry.md` Phase 5 intro + RecentActivity pattern notes updated.
+- **`lib/posthog-server.ts`** — new `runPostHogQuery(name, query)`: `POST {POSTHOG_QUERY_HOST}/api/projects/{POSTHOG_PROJECT_ID}/query/` with `Authorization: Bearer {POSTHOG_PERSONAL_API_KEY}` and body `{ query: { kind: "HogQLQuery", query }, name }`. Plain `fetch` + `AbortSignal.timeout(10_000)`, `cache: "no-store"`. No-ops → `[]` (dev warning) when the key or project id env vars are unset; `[posthog-server]` logs on HTTP/throw failures.
+- **`lib/dashboard-data.ts`** — `getMockCharts()` + mock `buildDaySeries` deleted. New `fetchDashboardCharts(userId)` with three parallel per-user HogQL queries: `job_found` 30-day daily series, `company_researched` 7-day daily series, `job_found` `matchScore` distribution in the five fixed buckets. Series zero-filled to UTC calendar days with `M/D` labels (`buildCountSeries`); distribution maps SQL bucket keys → `MATCH_BUCKETS` (`buildMatchDistribution`). The SQL `CASE` is **generated from `MATCH_BUCKETS`** (`buildMatchDistributionQuery`) so keys can't drift. Non-UUID `userId` short-circuits with `[dashboard-data]` warning (also the injection guard).
+- **`app/dashboard/page.tsx`** — the three data fetches now run in parallel via `Promise.all`; `fetchDashboardCharts(user.id)` replaces `getMockCharts()`.
+- **`components/dashboard/AnalyticsCharts.tsx`** — Match Score Distribution subtitle changed to "Saved jobs scoring 50%+".
+- **Docs:** `.env.example` + `code-standards.md` env table add `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_QUERY_HOST`; `progress-tracker.md` marks Feature 17 done (build plan 17/17) + decision entry incl. post-review fixes; `ui-registry.md` pattern notes updated.
 
 ## Decisions made
 
-- **`RecentActivity.tsx` needed zero changes** — `kind` maps 1:1 to the existing dot pairs (job_search = success green, company_research = info blue).
-- **`found_at` is the proxy for research time** (no `researched_at` column exists — same decision as Feature 15's Companies Researched trend). Research activity shows the job's found time, not research time.
-- **Sort before format**: sorting happens on raw ISO timestamps, then `formatTimeAgo` strings are applied — sorting the formatted "2h ago" strings would be wrong.
-- **Error policy matches the dashboard:** query failures log `[dashboard-data]` and degrade to `[]` (card renders empty, page never crashes); a partial result still renders.
+- **Charts use the existing hand-rolled SVG components — no recharts** (user decision). The build-plan's recharts line is superseded; no new dependency added.
+- **Server-side PostHog queries go through the Query API, not `posthog-node`** — no new dep, plain fetch, personal API key with `query:read` scope. `POSTHOG_QUERY_HOST` defaults to `https://eu.posthog.com` (the app host — NOT the `eu.i.posthog.com` ingestion host).
+- **Per-user 60s TTL memo + in-flight dedup** (`chartCache`/`chartInFlight` maps) so overlapping loads fire one query burst, not 3 uncached queries per render — PostHog `/query` is rate-limited (240 req/min, 3 concurrent, shared per project). Empty results from failures are cached too (bounded stale-empty to 60s).
+- **Match distribution excludes sub-50 scores** (`properties.matchScore >= 50`); subtitle updated to match. `MATCH_BUCKETS` is the single source for both SQL CASE and TS labels.
+- **UTC days everywhere**: SQL windows use `toStartOfDay(now()) - INTERVAL 29 DAY` / `6 DAY` — aligned to the calendar-day fill (review fix; the rolling `now() - INTERVAL 30 DAY` window dropped the oldest partial day). PostHog's `toStartOfDay` uses the project timezone; EU cluster is UTC.
 
 ## Problems solved
 
-- None new this session. Existing gotcha still applies: `npx` `.ps1` shim is blocked by the PowerShell execution policy — use `npx.cmd tsc --noEmit` / `npx.cmd eslint .`.
+- PostHog Query API auth/response shape: personal key (`Bearer`) + `HogQLQuery` kind; response `results` is an array of rows (arrays). Confirmed against docs — no `posthog-node` needed.
+- No PostHog MCP server exists in this session — user opted to put a personal API key in `.env.local` instead. Key has NOT been added yet; charts render empty until it is.
+- Window misalignment bug (rolling vs calendar days) caught by `@review` and fixed.
 
 ## Current state
 
-- Feature 16 complete and verified: `npx.cmd tsc --noEmit` + `npx.cmd eslint .` clean (build not re-run; last full `npm run build` was Feature 14 and was clean). Live activity entries need an authenticated session with completed `agent_runs` / researched `jobs` in the DB. `getMockCharts()` untouched.
-- Working tree has uncommitted Features 14 + 15 + 16 files and the two context docs (nothing committed).
-- **Feature 13 leftovers still open (untouched, per plan):** browser extraction fails with `Validation failed` at `page.goto` (`agent/research.ts:267`) — research degrades to job+profile-only synthesis with no `sources`. Diagnostic route `app/api/debug/stagehand-diag` is written but UNTESTED, plus `app/api/debug/research-test`. Both debug routes must be deleted before the Feature 13 commit.
-- InsForge `allowedRedirectUrls` still empty; search dedupe question still open.
+- Build plan complete: 17/17. Verified `npx.cmd tsc --noEmit`, `npx.cmd eslint .`, and full `npm run build` all clean (build was last run after the review fixes).
+- Uncommitted working tree: Feature 17 changes (6 files: `app/dashboard/page.tsx`, `lib/dashboard-data.ts`, `lib/posthog-server.ts`, `components/dashboard/AnalyticsCharts.tsx`, `context/code-standards.md`, `context/progress-tracker.md`; `context/ui-registry.md` — check `git status`). Features 14–16 already committed (`3562a53` recent activity real data).
+- Live chart values need `POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID` in `.env.local` plus real `job_found` / `company_researched` events.
+- Feature 13 leftover: Stagehand `Validation failed` at `page.goto` (`agent/research.ts:267`) — research degrades to job+profile-only synthesis; diagnostic routes `app/api/debug/stagehand-diag` and `app/api/debug/research-test` exist, UNTESTED, and must be deleted before the Feature 13 commit.
+- InsForge `allowedRedirectUrls` is still empty; `.env.local` uses `npx.cmd` (not `npx`) due to the PowerShell execution-policy block on `.ps1` shims.
 
 ## Next session starts with
 
-**Feature 17 — Analytics Charts: PostHog Data.** Replace `getMockCharts()` in `lib/dashboard-data.ts` with real PostHog queries for current user. Per build-plan: Jobs Found Over Time (job_found events, distinctId = userId, last 30 days, by day), Match Score Distribution (job_found matchScore property → 50-60/60-70/70-80/80-90/90-100 ranges), Company Research Activity (company_researched events, last 7 days, by day). Charts render with recharts per build-plan — but NOTE: the current chart components (`LineChart`, `BarChart`, `ChartCard`, `ChartEmptyState`) are hand-rolled SVG, not recharts; reconcile this before adding a dependency (existing components already satisfy the UI). Empty state shown per chart when no data exists.
-
-**Open item first:** the server-side PostHog query needs a PostHog personal/query API key — flag/confirm with the user before building (memory open question from Feature 15; `lib/posthog-server.ts` no-ops when env vars are unset). Also the `fetchDashboardStats`/`fetchRecentActivity` precedent: real data functions live in `lib/dashboard-data.ts` and log `[dashboard-data]` on error, degrading to empty values.
+Decide and commit: the working tree holds Feature 17 (plus the earlier dashboard work). Before committing — either fix/remove the Feature 13 Stagehand diagnostics, or commit Feature 17 separately first. Verify the git status and split the commits sensibly.
 
 ## Open questions
 
-- Feature 13 Stagehand `Validation failed` root cause — stagehand-diag route still needs to be run.
-- Feature 17 needs a server-side PostHog query API key (not confirmed provisioned) — confirm with user before starting; also decide recharts vs existing hand-rolled SVG charts.
-- InsForge `allowedRedirectUrls` still empty; search-result dedupe still open.
+- Will the user paste `POSTHOG_PERSONAL_API_KEY` / `POSTHOG_PROJECT_ID` into `.env.local`? Charts stay empty until then.
+- Search-dedupe question (from Feature 10) still unresolved.
+- Feature 13 Stagehand: fix, remove, or keep degraded? The debug routes must go before that commit.

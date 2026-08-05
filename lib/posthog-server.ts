@@ -2,6 +2,60 @@ import { PostHog } from "posthog-node";
 
 type EventProperties = Record<string, unknown>;
 
+const POSTHOG_QUERY_HOST = process.env.POSTHOG_QUERY_HOST ?? "https://eu.posthog.com";
+
+export async function runPostHogQuery(
+  name: string,
+  query: string,
+): Promise<unknown[][]> {
+  const apiKey = process.env.POSTHOG_PERSONAL_API_KEY;
+  const projectId = process.env.POSTHOG_PROJECT_ID;
+
+  if (!apiKey || !projectId) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        "[posthog-server] POSTHOG_PERSONAL_API_KEY or POSTHOG_PROJECT_ID not set — skipping query",
+        name,
+      );
+    }
+    return [];
+  }
+
+  const url = `${POSTHOG_QUERY_HOST.replace(/\/+$/, "")}/api/projects/${projectId}/query/`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query: { kind: "HogQLQuery", query },
+        name,
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      console.error(
+        `[posthog-server] query ${name} failed (${response.status})`,
+        detail,
+      );
+      return [];
+    }
+
+    const data = (await response.json()) as { results?: unknown };
+    if (!Array.isArray(data.results)) return [];
+    return data.results.filter((row): row is unknown[] => Array.isArray(row));
+  } catch (error) {
+    console.error(`[posthog-server] query ${name} threw`, error);
+    return [];
+  }
+}
+
 export async function captureServerEvent(
   userId: string,
   event: string,

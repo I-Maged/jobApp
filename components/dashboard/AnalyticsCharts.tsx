@@ -10,7 +10,10 @@ export function AnalyticsCharts({ charts }: { charts: DashboardCharts }) {
         <LineChart data={charts.jobsOverTime} />
       </ChartCard>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartCard title="Match Score Distribution" subtitle="All saved jobs">
+        <ChartCard
+          title="Match Score Distribution"
+          subtitle="Saved jobs scoring 50%+"
+        >
           <BarChart
             data={charts.matchDistribution}
             color="var(--color-success)"

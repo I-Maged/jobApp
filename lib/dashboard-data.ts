@@ -1,4 +1,5 @@
 import { createInsforgeServer } from "@/lib/insforge-server";
+import { runPostHogQuery } from "@/lib/posthog-server";
 
 export type StatCard = {
   label: string;
@@ -216,37 +217,154 @@ export async function fetchRecentActivity(
     }));
 }
 
-function buildDaySeries(days: number): ChartPoint[] {
-  return Array.from({ length: days }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (days - 1 - i));
-    const label = `${date.getMonth() + 1}/${date.getDate()}`;
-    const value = Math.max(
-      0,
-      Math.round(1.4 + Math.sin(i / 3.4) * 1.5 + (i % 4 === 0 ? 1 : 0)),
-    );
-    return { label, value };
-  });
+const MATCH_BUCKETS = [
+  { label: "50-60%", key: "50-60", min: 50 },
+  { label: "60-70%", key: "60-70", min: 60 },
+  { label: "70-80%", key: "70-80", min: 70 },
+  { label: "80-90%", key: "80-90", min: 80 },
+  { label: "90-100%", key: "90-100", min: 90 },
+];
+
+const CHART_CACHE_TTL_MS = 60_000;
+
+const chartCache = new Map<
+  string,
+  { data: DashboardCharts; expiresAt: number }
+>();
+
+const chartInFlight = new Map<string, Promise<DashboardCharts>>();
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function toCount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-export function getMockCharts(): DashboardCharts {
+function toDayKey(value: unknown): string | null {
+  if (typeof value === "number") {
+    return new Date(value * 1000).toISOString().slice(0, 10);
+  }
+  if (typeof value === "string") {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    if (match) return match[1];
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return new Date(parsed).toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+function buildCountSeries(rows: unknown[][], days: number): ChartPoint[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = toDayKey(row[0]);
+    if (key) counts.set(key, toCount(row[1]));
+  }
+
+  const today = new Date();
+  const points: ChartPoint[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i),
+    );
+    const key = date.toISOString().slice(0, 10);
+    points.push({
+      label: `${date.getUTCMonth() + 1}/${date.getUTCDate()}`,
+      value: counts.get(key) ?? 0,
+    });
+  }
+  return points;
+}
+
+function buildMatchDistribution(rows: unknown[][]): ChartPoint[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = String(row[0] ?? "");
+    if (key) counts.set(key, toCount(row[1]));
+  }
+  return MATCH_BUCKETS.map(({ label, key }) => ({
+    label,
+    value: counts.get(key) ?? 0,
+  }));
+}
+
+function buildMatchDistributionQuery(userId: string): string {
+  const reversed = [...MATCH_BUCKETS].reverse();
+  const whens = reversed
+    .slice(0, -1)
+    .map(
+      ({ key, min }) => `WHEN properties.matchScore >= ${min} THEN '${key}'`,
+    )
+    .join("\n       ");
+  const lowest = reversed[reversed.length - 1];
+  return `SELECT CASE
+       ${whens}
+       ELSE '${lowest.key}'
+     END AS bucket, count() AS count
+     FROM events
+     WHERE event = 'job_found' AND distinct_id = '${userId}'
+       AND properties.matchScore >= ${lowest.min}
+     GROUP BY bucket`;
+}
+
+async function loadDashboardCharts(userId: string): Promise<DashboardCharts> {
+  const [jobsRows, researchRows, distributionRows] = await Promise.all([
+    runPostHogQuery(
+      "dashboard_jobs_found_over_time_30d",
+      `SELECT toStartOfDay(timestamp) AS day, count() AS count
+       FROM events
+       WHERE event = 'job_found' AND distinct_id = '${userId}'
+         AND timestamp >= toStartOfDay(now()) - INTERVAL 29 DAY
+       GROUP BY day ORDER BY day`,
+    ),
+    runPostHogQuery(
+      "dashboard_company_researched_7d",
+      `SELECT toStartOfDay(timestamp) AS day, count() AS count
+       FROM events
+       WHERE event = 'company_researched' AND distinct_id = '${userId}'
+         AND timestamp >= toStartOfDay(now()) - INTERVAL 6 DAY
+       GROUP BY day ORDER BY day`,
+    ),
+    runPostHogQuery(
+      "dashboard_job_found_match_distribution",
+      buildMatchDistributionQuery(userId),
+    ),
+  ]);
+
   return {
-    jobsOverTime: buildDaySeries(30),
-    matchDistribution: [
-      { label: "50-60%", value: 2 },
-      { label: "60-70%", value: 3 },
-      { label: "70-80%", value: 5 },
-      { label: "80-90%", value: 8 },
-      { label: "90-100%", value: 4 },
-    ],
-    researchActivity: [
-      { label: "Mon", value: 1 },
-      { label: "Tue", value: 0 },
-      { label: "Wed", value: 2 },
-      { label: "Thu", value: 1 },
-      { label: "Fri", value: 2 },
-      { label: "Sat", value: 0 },
-      { label: "Sun", value: 0 },
-    ],
+    jobsOverTime: buildCountSeries(jobsRows, 30),
+    matchDistribution: buildMatchDistribution(distributionRows),
+    researchActivity: buildCountSeries(researchRows, 7),
   };
+}
+
+export async function fetchDashboardCharts(
+  userId: string,
+): Promise<DashboardCharts> {
+  if (!UUID_PATTERN.test(userId)) {
+    console.warn("[dashboard-data] fetch charts rejected non-uuid userId");
+    return { jobsOverTime: [], matchDistribution: [], researchActivity: [] };
+  }
+
+  const cached = chartCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const inFlight = chartInFlight.get(userId);
+  if (inFlight) return inFlight;
+
+  const pending = loadDashboardCharts(userId)
+    .then((data) => {
+      chartCache.set(userId, {
+        data,
+        expiresAt: Date.now() + CHART_CACHE_TTL_MS,
+      });
+      return data;
+    })
+    .finally(() => {
+      chartInFlight.delete(userId);
+    });
+
+  chartInFlight.set(userId, pending);
+  return pending;
 }

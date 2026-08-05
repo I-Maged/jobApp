@@ -9,10 +9,23 @@ import { calculateCompletion, REQUIRED_LABELS } from "@/lib/completion";
 import {
   fetchDashboardStats,
   fetchRecentActivity,
-  getMockCharts,
+  fetchDashboardCharts,
+} from "@/lib/dashboard-data";
+import type {
+  ActivityItem,
+  DashboardCharts,
+  StatCard,
 } from "@/lib/dashboard-data";
 
 export const metadata: Metadata = { title: "Dashboard" };
+
+const EMPTY_STATS: StatCard[] = [];
+const EMPTY_ACTIVITY: ActivityItem[] = [];
+const EMPTY_CHARTS: DashboardCharts = {
+  jobsOverTime: [],
+  matchDistribution: [],
+  researchActivity: [],
+};
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -22,9 +35,13 @@ export default async function DashboardPage() {
     ? calculateCompletion(profile)
     : { percent: 0, isComplete: false, missing: Object.values(REQUIRED_LABELS) };
 
-  const stats = user ? await fetchDashboardStats(user.id) : [];
-  const activity = user ? await fetchRecentActivity(user.id) : [];
-  const charts = getMockCharts();
+  const [stats, activity, charts] = user
+    ? await Promise.all([
+        fetchDashboardStats(user.id),
+        fetchRecentActivity(user.id),
+        fetchDashboardCharts(user.id),
+      ])
+    : [EMPTY_STATS, EMPTY_ACTIVITY, EMPTY_CHARTS];
 
   return (
     <main className="w-full bg-background">

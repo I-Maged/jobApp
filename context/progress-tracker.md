@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 5 — Dashboard
-**Last completed:** 16 Recent Activity — Real Data
-**Next:** 17 Analytics Charts — PostHog Data
+**Last completed:** 17 Analytics Charts — PostHog Data
+**Next:** Build plan complete (17/17). Remaining: Feature 13 Stagehand fix + debug-route cleanup, live end-to-end verification, and commit.
 
 ---
 
@@ -44,11 +44,22 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 14 Dashboard Page — Full UI
 - [x] 15 Stats Bar — Real Data
 - [x] 16 Recent Activity — Real Data
-- [ ] 17 Analytics Charts — PostHog Data
+- [x] 17 Analytics Charts — PostHog Data
 
 ---
 
 ## Decisions Made During Build
+
+### 17 Analytics Charts — PostHog Data (2026-08-05)
+
+- **`getMockCharts()` and the mock `buildDaySeries()` deleted; `fetchDashboardCharts(userId)` added to `lib/dashboard-data.ts`.** Three PostHog HogQL queries run in parallel (`Promise.all`), all scoped to `distinct_id = userId` (PostHog's per-user filter, the analytics counterpart of the RLS `user_id` invariant): `job_found` grouped by `toStartOfDay(timestamp)` over the last 30 days (Jobs Found Over Time), `company_researched` grouped by day over the last 7 days (Company Research Activity), and `job_found` bucketed by `properties.matchScore` into the five build-plan ranges (Match Score Distribution). Both day series are zero-filled in TS to a fixed window (30 / 7 `M/D` points) so the chart geometry matches the Feature 14 mock; `MATCH_BUCKETS` is a fixed 5-bucket map so the distribution always renders all five bars.
+- **Server-side PostHog queries go through the Query API, not `posthog-node`.** `runPostHogQuery(name, query)` added to `lib/posthog-server.ts` — `POST {host}/api/projects/{projectId}/query/` with `Authorization: Bearer {POSTHOG_PERSONAL_API_KEY}` and body `{ query: { kind: "HogQLQuery", query }, name }`. No new dependency (plain `fetch` with `AbortSignal.timeout(10_000)`, matching the Adzuna timeout pattern). Requires a personal API key with `query:read` scope (`POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID`; `POSTHOG_QUERY_HOST` defaults to `https://eu.posthog.com` — the app host, not the `eu.i.posthog.com` ingestion host). When either env var is unset the helper no-ops (dev warning, returns `[]`) — same lazy-required pattern as `lib/ai.ts` and the capture path, so `next build` and unconfigured deploys render empty charts instead of throwing.
+- **Charts use the existing hand-rolled SVG components — no recharts.** User decision: the current `LineChart`/`BarChart`/`ChartCard`/`ChartEmptyState` already satisfy the UI and the design tokens map 1:1 to SVG (see `ui-registry.md` pattern notes). The build-plan's recharts line is superseded; no dependency added to the `code-standards.md` approved list.
+- **Match Score Distribution buckets are computed in SQL (`CASE`), and sub-50 matches are excluded.** The five fixed ranges are 50-60 / 60-70 / 70-80 / 80-90 / 90-100 per the build plan; the WHERE clause filters `properties.matchScore >= 50` so scores below 50 don't fold into a mislabeled bucket (the matcher clamps 0-100, so they exist). The distribution is explicitly "saved jobs scoring ≥ 50"; low matches remain visible in the jobs table. Bucket keys returned by SQL (`'50-60'` etc.) map 1:1 to `MATCH_BUCKETS` — and the SQL `CASE` is **generated from `MATCH_BUCKETS`** (`buildMatchDistributionQuery`), so the SQL and TS bucket keys cannot drift. The card subtitle reads "Saved jobs scoring 50%+" to match the filter.
+- **UTC days, `M/D` labels.** PostHog groups by UTC day (`toStartOfDay`); the TS zero-fill uses the same UTC calendar day (`Date.UTC(...).toISOString().slice(0,10)`) so bucket keys always line up. The SQL windows use the same calendar-day bound as the fill (`timestamp >= toStartOfDay(now()) - INTERVAL 29 DAY` / `6 DAY`) so the chart's oldest day isn't a partial rolling-window cut — the first fix applied after `@review`. Labels are `M/D` for both day charts — the Feature 14 mock's `Mon`-`Sun` weekday labels were dropped for `researchActivity` because the 7-day window is rolling and fixed day names would mislabel dates.
+- **Error policy matches Features 15/16:** `runPostHogQuery` logs `[posthog-server]` on HTTP/timeout/parse failures and returns `[]`; the series builders treat empty rows as zero values, so the page renders the per-chart empty state instead of crashing. A non-UUID `userId` (should never happen from auth) short-circuits to empty charts with a `[dashboard-data]` warning — also the SQL-injection guard, since the id is interpolated into the query string.
+- **Per-user 60s TTL memo + in-flight dedup added after `@review`.** `fetchDashboardCharts` caches each user's chart data in a module-level `Map` (60s) and shares an in-flight `Promise` per user, so overlapping dashboard loads and rapid refreshes re-use one PostHog query burst instead of firing 3 uncached queries per render against the project-wide 240 req/min / 3-concurrent `/query` limits. `app/dashboard/page.tsx` also runs the three data fetches in parallel (`Promise.all`) — page latency is now the slowest fetch, not the sum.
+- **Verified:** `npx.cmd tsc --noEmit` and `npx.cmd eslint .` clean. Live chart values need `POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID` in `.env.local`, an authenticated session, and actual `job_found` / `company_researched` events in PostHog (the capture paths from Features 10/13; note Feature 13's research route is still degraded until the Stagehand fix).
 
 ### 16 Recent Activity — Real Data (2026-08-05)
 
