@@ -7,9 +7,9 @@ import { getCurrentUser } from "@/lib/get-current-user";
 import { fetchProfile } from "@/lib/profile-data";
 import { calculateCompletion, REQUIRED_LABELS } from "@/lib/completion";
 import {
+  fetchDashboardStats,
   getMockActivity,
   getMockCharts,
-  getMockStats,
 } from "@/lib/dashboard-data";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -22,7 +22,7 @@ export default async function DashboardPage() {
     ? calculateCompletion(profile)
     : { percent: 0, isComplete: false, missing: Object.values(REQUIRED_LABELS) };
 
-  const stats = getMockStats();
+  const stats = user ? await fetchDashboardStats(user.id) : [];
   const activity = getMockActivity();
   const charts = getMockCharts();
 

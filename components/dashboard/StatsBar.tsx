@@ -18,9 +18,11 @@ export function StatsBar({ stats }: { stats: StatCard[] }) {
             <span className="text-[30px] font-semibold leading-9 text-text-primary tabular-nums">
               {stat.value}
             </span>
-            <span className="inline-flex items-center rounded-sm bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-darker">
-              {stat.trend}
-            </span>
+            {stat.trend ? (
+              <span className="inline-flex items-center rounded-sm bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-darker">
+                {stat.trend}
+              </span>
+            ) : null}
           </div>
         </div>
       ))}

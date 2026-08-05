@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 5 — Dashboard
-**Last completed:** 14 Dashboard Page — Full UI
-**Next:** 15 Stats Bar — Real Data
+**Last completed:** 15 Stats Bar — Real Data
+**Next:** 16 Recent Activity — Real Data
 
 ---
 
@@ -42,13 +42,21 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 5 — Dashboard
 
 - [x] 14 Dashboard Page — Full UI
-- [ ] 15 Stats Bar — Real Data
+- [x] 15 Stats Bar — Real Data
 - [ ] 16 Recent Activity — Real Data
 - [ ] 17 Analytics Charts — PostHog Data
 
 ---
 
 ## Decisions Made During Build
+
+### 15 Stats Bar — Real Data (2026-08-05)
+
+- **`getMockStats()` deleted; `fetchDashboardStats(userId)` added to `lib/dashboard-data.ts`.** Single `.select("match_score, company_research, found_at").eq("user_id", userId)` — one round trip, only the columns the four cards need, always scoped to the current user per the RLS invariant. Stats are computed in TS from the row set (a personal job list is small — four head-count queries would add round trips for no gain). `lib/dashboard-data.ts` is now a server module; every client-component import of it is `import type` (erased at build), so no client boundary is broken.
+- **The four cards map 1:1 to build-plan Feature 15:** Total Jobs Found = row count; Avg. Match Rate = rounded mean of non-null `match_score`; Companies Researched = rows with `company_research IS NOT NULL`; Jobs This Week = rows with `found_at` in the last 7 days (rolling window, matching the memory's "within last 7 days" spec).
+- **Trend badges are real — the memory open question is resolved.** Uniform rule over rolling 7-day windows (this week = `[now-7d, now)`, last week = `[now-14d, now-7d)`): Total Jobs Found → `+N this week`; Companies Researched → `+N this week` (`found_at` is the proxy date — the schema has no `researched_at` column); Jobs This Week → `+N/-N vs last week` (delta vs previous week); Avg. Match Rate → `+N%/-N% vs last week` (points delta between the two windows' averages). The Avg. Match Rate trend is omitted when either window has no scored jobs, and `StatCard.trend` is now optional so `StatsBar` renders no badge when it is absent.
+- **Empty-state honesty:** Avg. Match Rate shows `—` (not `0%`) when no job has a `match_score` — a `0%` average would falsely imply uniformly bad matches. Query failure returns the four zero/`—` cards and logs `[dashboard-data]`, so the page renders instead of crashing (same policy as `fetchUserJobs`).
+- **Verified:** `npx tsc --noEmit` and `npx eslint .` clean. Live values need an authenticated session with jobs in the DB.
 
 ### 13 Company Research Agent — AI Provider Switch (2026-08-04)
 

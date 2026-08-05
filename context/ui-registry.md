@@ -600,7 +600,7 @@ Client Component. Renders in the CompanyResearch empty state. Posts `{ jobId }` 
 
 ## Phase 5 — Dashboard Components (imprinted 2026-08-05)
 
-All six are Server Components. The page (`app/dashboard/page.tsx`) owns the real profile-banner data; every dashboard section receives mock data as props from `lib/dashboard-data.ts`. Features 15–17 replace the mock function bodies with real DB/PostHog queries — no component changes.
+All six are Server Components. The page (`app/dashboard/page.tsx`) owns the real profile-banner data; StatsBar receives real DB data (Feature 15), while RecentActivity and AnalyticsCharts still receive mock data from `lib/dashboard-data.ts`. Features 16–17 replace the remaining mock function bodies with real DB/PostHog queries — no component changes.
 
 ### Dashboard page — `app/dashboard/page.tsx`
 
@@ -608,7 +608,7 @@ Server Component. Shell `mx-auto flex max-w-[1440px] flex-col gap-6 px-6 py-8 md
 
 ### StatsBar — `components/dashboard/StatsBar.tsx`
 
-Props: `{ stats: StatCard[] }`. Grid of 4 KPI cards.
+Props: `{ stats: StatCard[] }` (`trend` optional). Grid of 4 KPI cards. Renders the trend badge only when `stat.trend` is present.
 
 | Property      | Class |
 | ------------- | ----- |
@@ -616,11 +616,11 @@ Props: `{ stats: StatCard[] }`. Grid of 4 KPI cards.
 | Card          | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
 | Label         | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
 | Value         | `text-[30px] font-semibold leading-9 text-text-primary tabular-nums` |
-| Trend badge   | `inline-flex items-center rounded-sm bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-darker` |
+| Trend badge   | `inline-flex items-center rounded-sm bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-darker` (conditional — `{stat.trend ? <span>…</span> : null}`) |
 
 **Pattern notes:**
 - Stat card set matches Feature 15's real-data spec (Total Jobs Found / Avg. Match Rate / Companies Researched / Jobs This Week) — "Cover Letters Generated" from the design copy was dropped (out-of-scope feature).
-- Trend badge uses the ui-tokens trend badge (rounded-sm, not pill). Trends are mock-only; Feature 15 decides real computation.
+- Trend badge uses the ui-tokens trend badge (rounded-sm, not pill). Real since Feature 15: `+N this week` for Total Jobs Found / Companies Researched, `+N/-N vs last week` for Jobs This Week, `+N%/-N% vs last week` for Avg. Match Rate — all computed from rolling 7-day windows in `fetchDashboardStats`. Absent trends render no badge; Avg. Match Rate shows `—` when no job is scored.
 
 ### RecentActivity — `components/dashboard/RecentActivity.tsx`
 
