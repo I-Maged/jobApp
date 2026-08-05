@@ -3,7 +3,7 @@ import { ResumeUpload } from "@/components/profile/ResumeUpload";
 import { CompletionIndicator } from "@/components/profile/CompletionIndicator";
 import { getCurrentUser } from "@/lib/get-current-user";
 import { fetchProfile } from "@/lib/profile-data";
-import { calculateCompletion } from "@/lib/completion";
+import { calculateCompletion, REQUIRED_LABELS } from "@/lib/completion";
 import { EMPTY_EDUCATION, type ProfileFormState } from "@/types";
 
 export default async function ProfilePage() {
@@ -12,7 +12,7 @@ export default async function ProfilePage() {
 
   const completion = profile
     ? calculateCompletion(profile)
-    : { percent: 0, isComplete: false, missing: ["EMAIL"] };
+    : { percent: 0, isComplete: false, missing: Object.values(REQUIRED_LABELS) };
 
   const initialEmail = profile?.email ?? user?.email ?? "";
   const initial: ProfileFormState = {

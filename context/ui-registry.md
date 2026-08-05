@@ -595,3 +595,99 @@ Client Component. Renders in the CompanyResearch empty state. Posts `{ jobId }` 
 - Mirrors the SearchControls fetch pattern: `useTransition` (React 19 async transition), `setErrorMessage` on failure, no `useState` for status — `isPending` from the transition drives the spinner.
 - Returns a fragment (button + helper + error) rendered inside the empty state's `flex flex-col items-center gap-3` wrapper.
 - No `captureEvent` on click — the `company_researched` PostHog event is fired server-side by the route after the dossier persists.
+
+---
+
+## Phase 5 — Dashboard Components (imprinted 2026-08-05)
+
+All six are Server Components. The page (`app/dashboard/page.tsx`) owns the real profile-banner data; every dashboard section receives mock data as props from `lib/dashboard-data.ts`. Features 15–17 replace the mock function bodies with real DB/PostHog queries — no component changes.
+
+### Dashboard page — `app/dashboard/page.tsx`
+
+Server Component. Shell `mx-auto flex max-w-[1440px] flex-col gap-6 px-6 py-8 md:px-8 md:py-10` on `w-full bg-background`. Real incomplete-profile banner (fetchProfile + calculateCompletion + `CompletionIndicator`, only when incomplete), then StatsBar → RecentActivity → AnalyticsCharts.
+
+### StatsBar — `components/dashboard/StatsBar.tsx`
+
+Props: `{ stats: StatCard[] }`. Grid of 4 KPI cards.
+
+| Property      | Class |
+| ------------- | ----- |
+| Grid          | `grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4` |
+| Card          | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Label         | `text-xs font-medium uppercase tracking-wide text-text-secondary` |
+| Value         | `text-[30px] font-semibold leading-9 text-text-primary tabular-nums` |
+| Trend badge   | `inline-flex items-center rounded-sm bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-darker` |
+
+**Pattern notes:**
+- Stat card set matches Feature 15's real-data spec (Total Jobs Found / Avg. Match Rate / Companies Researched / Jobs This Week) — "Cover Letters Generated" from the design copy was dropped (out-of-scope feature).
+- Trend badge uses the ui-tokens trend badge (rounded-sm, not pill). Trends are mock-only; Feature 15 decides real computation.
+
+### RecentActivity — `components/dashboard/RecentActivity.tsx`
+
+Props: `{ items: ActivityItem[] }`. Card with activity rows: colored dot, title, timestamp.
+
+| Property     | Class |
+| ------------ | ----- |
+| Card         | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Heading      | `text-base font-semibold leading-6 text-text-primary` |
+| Item row     | `flex items-center gap-3` |
+| Dot outer    | `flex h-4 w-4 shrink-0 items-center justify-center rounded-full` + `bg-success-light` (job_search) / `bg-info-light` (company_research) |
+| Dot inner    | `h-2 w-2 rounded-full border border-surface` + `bg-success-alt` / `bg-info` |
+| Title        | `flex-1 text-sm font-medium text-text-primary` |
+| Timestamp    | `text-xs text-text-muted` (`<time>`) |
+
+**Pattern notes:**
+- Dots follow ui-tokens activity dots (16px outer tinted ring, 8px inner solid with white border). `job_search` reuses the "Job found" success pair; `company_research` uses the info pair — maps to Feature 16's real event sources.
+
+### ChartCard — `components/dashboard/ChartCard.tsx`
+
+Props: `{ title: string; subtitle?: string; children: ReactNode }`. Standard card shell for chart sections.
+
+| Property  | Class |
+| --------- | ----- |
+| Card      | `rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]` |
+| Title     | `text-base font-semibold leading-6 text-text-primary` |
+| Subtitle  | `text-xs text-text-muted` |
+| Body      | `mt-4` |
+
+### chart-layout — `components/dashboard/chart-layout.ts`
+
+Shared SVG chart geometry: `export const CHART = { width: 600, height: 210, padX: 36, padBottom: 28 }`. Imported by `LineChart`, `BarChart`, and `ChartEmptyState` so a dimension change propagates to every chart and the empty-state height stays in sync. Each chart keeps its own `PAD_TOP` (16 line / 24 bar).
+
+### ChartEmptyState — `components/dashboard/ChartEmptyState.tsx`
+
+Shared all-zero empty state for the chart primitives. Height derived from `CHART.height` via inline `style` (dynamic layout value, not a hardcoded class). Copy: "No data yet. Your activity will appear here."
+
+### LineChart — `components/dashboard/LineChart.tsx`
+
+Props: `{ data: ChartPoint[] }`. Hand-rolled SVG line + area chart, `viewBox 0 0 600 210`, `h-auto w-full` (responsive). Used for Jobs Found Over Time.
+
+- Line: `stroke-width 3`, `stroke-linecap/join round`, color `var(--color-accent)`
+- Area: `linearGradient` `var(--color-accent)` at 0.2 → 0 opacity
+- Grid: dashed 4/4 lines at 25/50/75/100%, `var(--color-border)`
+- Dots: r 3.5, `var(--color-accent)`; x labels 12px, `var(--color-text-muted)`
+- Label thinning: renders every Nth x label when `data.length > 7` (`labelStep = ceil(n / 7)`) — Feature 17 feeds ~30 daily points without label overlap
+- Empty state (all values 0): `<ChartEmptyState />`
+
+### BarChart — `components/dashboard/BarChart.tsx`
+
+Props: `{ data: ChartPoint[]; color: string }` — `color` is a CSS var string (`var(--color-success)` / `var(--color-info)`). Hand-rolled SVG bar chart, same geometry constants (`CHART`) and empty state as LineChart.
+
+- Bars: rounded-top paths, width `min(slot * 0.55, 48)`, radius `min(6, barWidth / 2)`, fill = `color` prop via inline style
+- Baseline: solid 1px `var(--color-border)`
+- Value labels above bars (12px, `var(--color-text-muted)`), x labels below
+- Empty state (all values 0): `<ChartEmptyState />`
+
+### AnalyticsCharts — `components/dashboard/AnalyticsCharts.tsx`
+
+Props: `{ charts: DashboardCharts }`. Composes the three chart cards.
+
+- Stack: `flex flex-col gap-6`
+- Jobs Found Over Time (line, subtitle "Last 30 days") full width, then `grid grid-cols-1 gap-6 lg:grid-cols-2` with Match Score Distribution (`var(--color-success)`) + Company Research Activity (`var(--color-info)`, subtitle "Last 7 days")
+
+**Pattern notes (charts):**
+- No recharts — hand-rolled SVG because recharts is not installed and not on the `code-standards.md` approved list, and the design tokens map 1:1 to SVG. No new dependency.
+- SVG `stroke`/`fill` presentation attributes don't resolve `var()` reliably, so every token color is applied via inline `style` — never hex, never dynamic Tailwind classes (Tailwind can't see runtime-constructed classes).
+- Gradient ids are sanitized `useId()` output (`useId().replace(/:/g, "")`) — colons break `url(#…)` references.
+- Empty state lives in `ChartEmptyState`, imported by both chart primitives, so Feature 17's real PostHog data gets "No data yet" for free.
+- Mock `jobsOverTime` models the real 30-day window (`buildDaySeries(30)` generating `M/D` labels + a wave pattern), matching Feature 17's PostHog query shape; `researchActivity` stays at 7 days.

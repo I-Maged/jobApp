@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** 4 — Job Details Page
-**Last completed:** 13 Company Research Agent
-**Next:** 14 Dashboard Page — Full UI
+**Phase:** 5 — Dashboard
+**Last completed:** 14 Dashboard Page — Full UI
+**Next:** 15 Stats Bar — Real Data
 
 ---
 
@@ -41,7 +41,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 5 — Dashboard
 
-- [ ] 14 Dashboard Page — Full UI
+- [x] 14 Dashboard Page — Full UI
 - [ ] 15 Stats Bar — Real Data
 - [ ] 16 Recent Activity — Real Data
 - [ ] 17 Analytics Charts — PostHog Data
@@ -274,6 +274,23 @@ Post-build review (6 findings, all fixed): (1) `job_type` mapping now covers Adz
 - **`components/job-details/ResearchCompanyButton.tsx`** (new client component) — POSTs to the route with `useTransition` + `router.refresh()` on success (matches SearchControls pattern), shows spinner + helper text while pending, `ErrorBanner` on failure. `CompanyResearch.tsx` empty state now uses it (jobId prop threaded from the details page).
 - **Current env state:** `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` NOT in `.env.local` — in-browser research returns a clean 500 ("Internal server error") until the keys are added. The full end-to-end flow also still needs OpenAI to stop 429ing. Homepage derivation + synthesis-fallback paths are the immediately testable parts once keys land.
 - **Post-review fixes applied (same day):** (1) homepage/sub-page navigation now `goto(waitUntil: "load")` then best-effort `waitForLoadState("networkidle", 10s)` in its own try/catch — a slow site no longer kills the whole homepage research step; (2) `stripSubdomain` is TLD-aware via a `COMPOUND_TLDS` set (`jobs.bbc.co.uk` → `bbc.co.uk`, not `co.uk`); (3) `deriveHomepageUrl` only fetches `http:`/`https:` URLs (SSRF hardening); (4) PostHog `captureServerEvent` is `.catch`ed in the route so a telemetry failure can't 500 a successfully-saved dossier; (5) if `createStagehand` throws after the session is created, the session is released via `bb.sessions.update(id, { status: "REQUEST_RELEASE" })` instead of leaking until its 120s timeout; (6) removed the now-unused `createBrowserbaseSession` helper. All checks re-run clean.
+
+### 14 Dashboard Page — Full UI (2026-08-05)
+
+- **`app/dashboard/page.tsx` created** — async Server Component, `metadata.title: "Dashboard"`, shell matching the other app pages (`mx-auto flex max-w-[1440px] flex-col gap-6 px-6 py-8 md:px-8 md:py-10`). Composes the real incomplete-profile banner (only when `!completion.isComplete`), then `<StatsBar>`, `<RecentActivity>`, `<AnalyticsCharts>` with mock data. The route already existed in the `proxy.ts` auth gate, so no new gate logic was needed.
+- **Incomplete profile banner is wired to real data, not mock.** The page calls `getCurrentUser()` → `fetchProfile(user.id)` → `calculateCompletion()` and reuses the existing `CompletionIndicator` (same header-card pattern as the profile page). This was nearly free because `lib/completion.ts` + `lib/profile-data.ts` already exist, and it doesn't overlap Features 15–17 (stats/activity/charts). When the profile is complete the banner renders nothing.
+- **Stat card set follows Feature 15's real-data spec, not the Feature 14 design copy.** Four cards: Total Jobs Found, Avg. Match Rate, Companies Researched, Jobs This Week. "Cover Letters Generated" (build-plan 14 copy) was dropped — cover-letter generation is an out-of-scope feature that could never be wired. Trend badges are mock-only visuals (`success-lightest`/`success-darker`, per ui-tokens); Feature 15 decides whether/how to compute real trends (schema has `found_at` so a this-week-vs-last-week comparison is feasible).
+- **Charts are hand-rolled SVG, not recharts.** recharts is not installed and not on the `code-standards.md` approved list, and the dependency policy ("is there a simpler native solution?") plus the existing hand-built SVG precedent (`CompletionIndicator` ring) pointed to pure SVG. The design tokens map 1:1 to SVG: dashed `--color-border` grid, accent 3px line + 0.2→0 area gradient for Jobs Found Over Time, `--color-success` bars for Match Score Distribution, `--color-info` bars for Company Research Activity. No new dependency, no client bundle.
+- **"Company Research Activity" chart, not "Resume Tailoring Activity".** Same rationale as the stat cards — resume tailoring is out of scope; the Feature 17 real-data spec says Company Research Activity. Bar color stays the `#61A8FF` position from ui-tokens (info).
+- **Chart colors are CSS variables applied via inline `style`, never hex and never dynamic Tailwind classes.** SVG `stroke`/`fill` presentation attributes do not resolve `var()` reliably, so the charts use `style={{ stroke: "var(--color-accent)" }}` etc. `BarChart` takes `color` as a CSS var string prop (`var(--color-success)` / `var(--color-info)`) — the only dynamic value, which rules out class-name construction (Tailwind can't see dynamic classes).
+- **Gradient ids are sanitized `useId()` output.** `useId()` returns colons (`:r0:`) which break `url(#…)` references; `useId().replace(/:/g, "")` keeps the id unique per instance and url-safe.
+- **Mock data lives in `lib/dashboard-data.ts`** — `StatCard`, `ActivityItem`, `ChartPoint`, `DashboardCharts` types plus `getMockStats()`, `getMockActivity()`, `getMockCharts()`. Components are prop-driven presentational Server Components, so Features 15–17 replace the function bodies (real DB/PostHog queries) without touching any component — the same "data-source swap" pattern used from Feature 09 → 11.
+- **Activity palette matches the two real event sources.** `job_search` uses the "Job found" dot pair (`bg-success-light` / `bg-success-alt`), `company_research` uses the info pair (`bg-info-light` / `bg-info`) — per ui-tokens activity dots and build-plan Feature 16 ("info blue, success green"). Mock entries are the real shapes: "Found X jobs for [title]" and "Researched [company]", with relative timestamps as display strings (Feature 16 computes them server-side).
+- **Chart components render a centered empty state when every value is 0** (`flex h-[210px] items-center justify-center` + `text-sm text-text-muted`) — ready for Feature 17's "empty state shown when no data exists yet".
+- **Components:** `components/dashboard/StatsBar.tsx`, `RecentActivity.tsx`, `ChartCard.tsx`, `LineChart.tsx`, `BarChart.tsx`, `AnalyticsCharts.tsx` — all Server Components, registered in `ui-registry.md`.
+- **Verified:** `npx tsc --noEmit`, `npx eslint .`, `npm run build` all pass; build output lists `/dashboard` as dynamic (ƒ). Live render needs an authenticated session (proxy redirects logged-out users to `/login`).
+- **Known Feature 13 leftovers untouched:** `app/api/debug/research-test` and `app/api/debug/stagehand-diag` still exist in the build output — they are deleted as part of Feature 13's wrap-up (per memory), not this feature's scope.
+- **Post-review fixes applied (same day):** (1) the null-profile banner fallback on the dashboard no longer claims `EMAIL` is missing — it seeds the full `REQUIRED_LABELS` list from `lib/completion.ts` (`Object.values(REQUIRED_LABELS)`); the identical fallback on `app/profile/page.tsx` was aligned to match; (2) `jobsOverTime` mock now models the real Feature 17 window — 30 days via `buildDaySeries(30)` (`M/D` labels, wave pattern) with the card subtitle updated to "Last 30 days", and `LineChart` gained label thinning (`labelStep = ceil(n / 7)`) so 30 daily labels don't overlap; (3) the duplicated chart empty state and geometry constants were extracted into `components/dashboard/ChartEmptyState.tsx` and `chart-layout.ts` (`CHART = { width: 600, height: 210, padX: 36, padBottom: 28 }`), imported by both chart primitives so the empty-state height and dimensions stay in sync. All checks re-run clean.
 
 ---
 

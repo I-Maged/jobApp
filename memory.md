@@ -1,35 +1,47 @@
-# Memory — Resume Extraction ENOENT Fix + OpenRouter Docs Sync
+# Memory — Feature 14 Dashboard Page Full UI
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 ## What was built
 
-- **`app/api/resume/extract/route.ts` fixed** — "Extract from Resume" returned 500 `ENOENT: no such file or directory, open 'D:\career\jobapp\[project]\node_modules\pdfjs-dist\legacy\build\pdf.worker.min.mjs [app-route] (ecmascript)'` from `readFileSync` inside `ensureWorker()`. Turbopack statically rewrote `createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.worker.min.mjs")` into the literal virtual module ID (confirmed in the compiled dev chunk: `const workerFile = "[project]/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs [app-route] (ecmascript)";`). Fix: dropped `createRequire`/`require.resolve` and build the path at request time with `join(process.cwd(), "node_modules", "pdfjs-dist", "legacy", "build", "pdf.worker.min.mjs")` — a dynamic path Turbopack cannot statically rewrite. `PDFParse.setWorker(base64 data URL)` still runs once per process, lazily (a top-level fs read would still throw EBADF during build-time page-data collection).
-- **Docs synced to OpenRouter** — replaced the remaining GPT-4o references in current-state docs: `context/architecture.md`, `context/project-overview.md`, `context/code-standards.md`, `context/library-docs.md` (added pdf-parse "Worker setup" section documenting the `[project]` ENOENT gotcha), `context/build-plan.md`. `context/progress-tracker.md` gained a decision entry for the worker ENOENT fix; its historical GPT-4o-era entries were left as-is.
+- **`app/dashboard/page.tsx` created** — async Server Component, `metadata.title: "Dashboard"`, shell `mx-auto flex max-w-[1440px] flex-col gap-6 px-6 py-8 md:px-8 md:py-10`. Real incomplete-profile banner (only when `!completion.isComplete`) + `<StatsBar>`, `<RecentActivity>`, `<AnalyticsCharts>` with mock data. Route already existed in the `proxy.ts` auth gate — no new gate logic.
+- **`components/dashboard/` (all Server Components):** `StatsBar.tsx`, `RecentActivity.tsx`, `ChartCard.tsx`, `LineChart.tsx`, `BarChart.tsx`, `AnalyticsCharts.tsx`, plus `ChartEmptyState.tsx` and `chart-layout.ts` (shared SVG geometry constants).
+- **`lib/dashboard-data.ts` created** — `StatCard`, `ActivityItem`, `ChartPoint`, `DashboardCharts` types + `getMockStats()`, `getMockActivity()`, `getMockCharts()`. Components are prop-driven, so Features 15–17 replace the mock function bodies with real queries — zero component changes.
+- **`app/profile/page.tsx` aligned** — its null-profile completion fallback now also seeds `Object.values(REQUIRED_LABELS)` instead of the misleading `["EMAIL"]`.
+- **Docs:** `ui-registry.md` gained the "Phase 5 — Dashboard Components" section; `progress-tracker.md` marked Feature 14 done, Phase 5, next = Feature 15.
 
 ## Decisions made
 
-- **Rule: never resolve runtime-read files via `require.resolve("...")` in server code** — Turbopack rewrites any statically-analyzable resolve into virtual `[project]` paths (verified in both dev and prod chunks). Build the path from `process.cwd()` at runtime instead.
-- **OpenRouter remains the AI provider** (prior session): all model calls route through `lib/ai.ts` (`AI_MODEL` default `google/gemma-4-26b-a4b-it:free`, `AI_BASE_URL` default `https://openrouter.ai/api/v1`); Stagehand uses `openai/${AI_MODEL}` + `openaiEndpointFormat: "chat"`. Docs now reflect this consistently.
+- **Stat card set follows Feature 15's real-data spec** (Total Jobs Found / Avg. Match Rate / Companies Researched / Jobs This Week) — the design copy's "Cover Letters Generated" was dropped (out-of-scope feature that could never be wired). Trend badges are mock-only visuals; Feature 15 decides real computation.
+- **"Company Research Activity" chart, not "Resume Tailoring Activity"** — same out-of-scope rationale; matches Feature 17's spec.
+- **Hand-rolled SVG charts, no recharts** — recharts is not installed and not on the `code-standards.md` approved dependency list; design tokens map 1:1 to SVG. No new dependency, no client bundle.
+- **Chart colors are CSS variables via inline `style`** — SVG `stroke`/`fill` presentation attributes don't resolve `var()`; also no dynamic Tailwind classes (Tailwind can't see runtime-constructed classes). `BarChart` takes `color` as a CSS var string (`var(--color-success)` / `var(--color-info)`).
+- **Mock data module is the Feature 15–17 contract** — `jobsOverTime` models the real 30-day window (`buildDaySeries(30)`, `M/D` labels), research stays 7 days.
+- **Activity palette maps to the two real event sources:** `job_search` → success dot pair (`bg-success-light`/`bg-success-alt`), `company_research` → info pair (`bg-info-light`/`bg-info`).
 
 ## Problems solved
 
-- Resume extraction 500 ENOENT — root cause was Turbopack's virtual `[project]` module path, not a missing file (the worker file exists on disk). Fixed via runtime path construction.
-- Verified: unauthenticated `POST /api/resume/extract` now returns 401 (worker configured OK, then auth gate) instead of 500. tsc + eslint clean.
+- **SVG CSS vars:** `stroke`/`fill` as XML attributes ignore `var()`, so every token color is applied via `style={{ stroke: "var(--color-…)" }}` etc. (documented in ui-registry).
+- **Gradient ids:** `useId()` returns colons (`:r0:`) which break `url(#…)` references — sanitize with `useId().replace(/:/g, "")`.
+- **Label overlap (review fix):** `LineChart` renders every Nth x label when `data.length > 7` (`labelStep = ceil(n / 7)`) — Feature 17 feeds ~30 daily points.
+- **Null-profile banner (review fix):** fallback `{ percent: 0, missing: ["EMAIL"] }` claimed a non-editable field was missing; now `missing: Object.values(REQUIRED_LABELS)`. Applied to both dashboard and profile pages.
+- **Duplication (review fix):** chart empty state + geometry constants extracted into `ChartEmptyState.tsx` / `chart-layout.ts` (`CHART = { width: 600, height: 210, padX: 36, padBottom: 28 }`); empty-state height derives from `CHART.height` via inline style.
 
 ## Current state
 
-- Working tree: 7 modified files, nothing committed — `app/api/resume/extract/route.ts` (the fix) + 6 context docs. Dev server on :3000 serves the fixed route.
-- **Still open from Feature 13:** browser extraction inside company research FAILS with `Validation failed` at `page.goto` (agent/research.ts:267); research degrades to job+profile-only synthesis (200 + dossier, but `sources` has no URLs). Diagnostic route `app/api/debug/stagehand-diag/route.ts` written and UNTESTED. Two temp debug routes exist (`app/api/debug/research-test/route.ts`, `app/api/debug/stagehand-diag/route.ts`) — delete before commit.
-- InsForge backend `allowedRedirectUrls: []` (Feature 02 OAuth callback whitelist unconfirmed); search results not deduped (open since Feature 11).
+- Feature 14 complete and verified: `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean; build lists `/dashboard` as dynamic (ƒ). Live render needs an authenticated session (proxy redirects logged-out users to `/login`).
+- Working tree has uncommitted Feature 14 files + the two context docs (nothing committed).
+- **Feature 13 leftovers still open:** browser extraction in company research still fails with `Validation failed` at `page.goto` (`agent/research.ts:267`) — research degrades to job+profile-only synthesis with no `sources` URLs. Diagnostic route `app/api/debug/stagehand-diag` and `app/api/debug/research-test` are written but the diag route is UNTESTED. Both debug routes must be deleted before the Feature 13 commit.
+- InsForge `allowedRedirectUrls` is still empty; search dedupe question still open.
 
 ## Next session starts with
 
-Debug the Feature 13 browser extraction: run `POST /api/debug/stagehand-diag` and read the full `Validation failed` stack at `page.goto`. Likely suspects: Stagehand's a11y-snapshot-at-navigation calling the model through the AI-SDK openai provider and getting output the schema rejects, or the `openaiEndpointFormat`/model combo needs adjusting (try omitting `openaiEndpointFormat` → Responses API, or a different free model). Fix so extraction completes, re-run the full research test confirming `sources` contains real URLs, delete both `app/api/debug/*` routes, verify the live UI flow (scored job → Research Company → dossier + idempotency + `company_researched` PostHog event), then start Feature 14 — Dashboard Page Full UI.
+**Feature 15 — Stats Bar: Real Data.** Replace `getMockStats()` in `lib/dashboard-data.ts` with real queries against `jobs` (COUNT all = Total Jobs Found; AVG `match_score` = Avg. Match Rate; COUNT `company_research` IS NOT NULL = Companies Researched; COUNT `found_at` within last 7 days = Jobs This Week). Must decide what the trend badges show (mock-only now; schema has `found_at` so this-week-vs-last-week is computable, or drop trends).
+
+Do NOT touch the Feature 13 debug routes during Feature 15 — they get deleted as part of Feature 13's wrap-up (run `POST /api/debug/stagehand-diag` first, read the `page.goto` stack).
 
 ## Open questions
 
-- Root cause of `Validation failed` at `page.goto` — in progress.
-- `allowedRedirectUrls` empty on InsForge backend — OAuth callback may need whitelisting before production login works.
-- Search result dedupe (Feature 11).
-- Browserbase free-plan single-session limit may matter if concurrent research is added.
+- Feature 13 Stagehand `Validation failed` root cause — stagehand-diag route still needs to be run.
+- Trend badges: real computation or removal, decided during Feature 15.
+- Feature 17 PostHog charts need a server-side PostHog query API key (not confirmed provisioned) — flag during Feature 15/17 planning.
