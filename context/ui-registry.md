@@ -600,7 +600,7 @@ Client Component. Renders in the CompanyResearch empty state. Posts `{ jobId }` 
 
 ## Phase 5 — Dashboard Components (imprinted 2026-08-05)
 
-All six are Server Components. The page (`app/dashboard/page.tsx`) owns the real profile-banner data; StatsBar receives real DB data (Feature 15), while RecentActivity and AnalyticsCharts still receive mock data from `lib/dashboard-data.ts`. Features 16–17 replace the remaining mock function bodies with real DB/PostHog queries — no component changes.
+All six are Server Components. The page (`app/dashboard/page.tsx`) owns the real profile-banner data; StatsBar receives real DB data (Feature 15) and RecentActivity receives real DB data (Feature 16), while AnalyticsCharts still receives mock data from `lib/dashboard-data.ts`. Feature 17 replaces the remaining mock function body with real PostHog queries — no component changes.
 
 ### Dashboard page — `app/dashboard/page.tsx`
 
@@ -637,7 +637,8 @@ Props: `{ items: ActivityItem[] }`. Card with activity rows: colored dot, title,
 | Timestamp    | `text-xs text-text-muted` (`<time>`) |
 
 **Pattern notes:**
-- Dots follow ui-tokens activity dots (16px outer tinted ring, 8px inner solid with white border). `job_search` reuses the "Job found" success pair; `company_research` uses the info pair — maps to Feature 16's real event sources.
+- Dots follow ui-tokens activity dots (16px outer tinted ring, 8px inner solid with white border). `job_search` reuses the "Job found" success pair; `company_research` uses the info pair — matches Feature 16's real event sources.
+- Real since Feature 16: items come from `fetchRecentActivity` — completed `agent_runs` ("Found X jobs for [jobTitle]", success dot) + `jobs` with `company_research` ("Researched [company]", info dot), merged, sorted desc, capped at 8. Timestamps pre-formatted as relative "time ago" strings by `formatTimeAgo`.
 
 ### ChartCard — `components/dashboard/ChartCard.tsx`
 

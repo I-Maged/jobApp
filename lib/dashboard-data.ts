@@ -45,6 +45,48 @@ function inWindow(row: StatsRow, start: number, end: number): boolean {
   return time >= start && time < end;
 }
 
+type RunActivityRow = {
+  id: string;
+  job_title_searched: string;
+  jobs_found: number;
+  started_at: string;
+};
+
+type ResearchActivityRow = {
+  id: string;
+  company: string;
+  found_at: string;
+};
+
+type ActivityEntry = {
+  id: string;
+  kind: ActivityItem["kind"];
+  title: string;
+  time: string;
+};
+
+const ACTIVITY_LIMIT = 8;
+
+function formatTimeAgo(timestamp: string): string {
+  const diffMs = Date.now() - Date.parse(timestamp);
+  if (Number.isNaN(diffMs) || diffMs < 60_000) return "Just now";
+
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export async function fetchDashboardStats(userId: string): Promise<StatCard[]> {
   const insforge = await createInsforgeServer();
   const { data, error } = await insforge.database
@@ -116,45 +158,62 @@ export async function fetchDashboardStats(userId: string): Promise<StatCard[]> {
   ];
 }
 
-export function getMockActivity(): ActivityItem[] {
-  return [
-    {
-      id: "activity-1",
-      kind: "job_search",
-      title: "Found 8 jobs for Senior Frontend Engineer",
-      timestamp: "2h ago",
-    },
-    {
-      id: "activity-2",
-      kind: "company_research",
-      title: "Researched Stripe",
-      timestamp: "4h ago",
-    },
-    {
-      id: "activity-3",
-      kind: "job_search",
-      title: "Found 10 jobs for Product Manager",
-      timestamp: "Yesterday",
-    },
-    {
-      id: "activity-4",
-      kind: "company_research",
-      title: "Researched Linear",
-      timestamp: "Yesterday",
-    },
-    {
-      id: "activity-5",
-      kind: "job_search",
-      title: "Found 6 jobs for Backend Engineer",
-      timestamp: "2 days ago",
-    },
-    {
-      id: "activity-6",
-      kind: "company_research",
-      title: "Researched Vercel",
-      timestamp: "3 days ago",
-    },
+export async function fetchRecentActivity(
+  userId: string,
+): Promise<ActivityItem[]> {
+  const insforge = await createInsforgeServer();
+
+  const [runsResult, researchResult] = await Promise.all([
+    insforge.database
+      .from("agent_runs")
+      .select("id, job_title_searched, jobs_found, started_at")
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .order("started_at", { ascending: false })
+      .limit(ACTIVITY_LIMIT),
+    insforge.database
+      .from("jobs")
+      .select("id, company, found_at")
+      .eq("user_id", userId)
+      .not("company_research", "is", null)
+      .order("found_at", { ascending: false })
+      .limit(ACTIVITY_LIMIT),
+  ]);
+
+  if (runsResult.error) {
+    console.error("[dashboard-data] fetch activity runs", runsResult.error);
+  }
+  if (researchResult.error) {
+    console.error("[dashboard-data] fetch activity research", researchResult.error);
+  }
+
+  const runs = (runsResult.data ?? []) as RunActivityRow[];
+  const research = (researchResult.data ?? []) as ResearchActivityRow[];
+
+  const entries: ActivityEntry[] = [
+    ...runs.map((run) => ({
+      id: `run-${run.id}`,
+      kind: "job_search" as const,
+      title: `Found ${run.jobs_found} jobs for ${run.job_title_searched}`,
+      time: run.started_at,
+    })),
+    ...research.map((job) => ({
+      id: `job-${job.id}`,
+      kind: "company_research" as const,
+      title: `Researched ${job.company}`,
+      time: job.found_at,
+    })),
   ];
+
+  return entries
+    .sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
+    .slice(0, ACTIVITY_LIMIT)
+    .map((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      title: entry.title,
+      timestamp: formatTimeAgo(entry.time),
+    }));
 }
 
 function buildDaySeries(days: number): ChartPoint[] {

@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** 5 — Dashboard
-**Last completed:** 15 Stats Bar — Real Data
-**Next:** 16 Recent Activity — Real Data
+**Last completed:** 16 Recent Activity — Real Data
+**Next:** 17 Analytics Charts — PostHog Data
 
 ---
 
@@ -43,12 +43,21 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 14 Dashboard Page — Full UI
 - [x] 15 Stats Bar — Real Data
-- [ ] 16 Recent Activity — Real Data
+- [x] 16 Recent Activity — Real Data
 - [ ] 17 Analytics Charts — PostHog Data
 
 ---
 
 ## Decisions Made During Build
+
+### 16 Recent Activity — Real Data (2026-08-05)
+
+- **`getMockActivity()` deleted; `fetchRecentActivity(userId)` added to `lib/dashboard-data.ts`.** Two scoped queries run in parallel (`Promise.all`): `agent_runs` (completed runs — `id, job_title_searched, jobs_found, started_at`) and `jobs` where `company_research IS NOT NULL` (`id, company, found_at`). Both filtered by `user_id`, ordered desc, limited to 8 (`ACTIVITY_LIMIT`). The merged entries are sorted by raw timestamp desc and sliced to 8 **before** formatting — sorting by the already-formatted "2h ago" strings would be wrong.
+- **Run rows format "Found X jobs for [jobTitle]", research rows "Researched [company]".** `kind` maps 1:1 to the existing dot pairs (job_search = success green, company_research = info blue), so `RecentActivity.tsx` needed zero changes. IDs are prefixed (`run-` / `job-`) to prevent key collisions between the two sources.
+- **No research timestamp exists — `found_at` is the proxy** (same decision as Feature 15's Companies Researched trend). The research activity entry shows the job's found time, not the research time; acceptable until a `researched_at` column lands.
+- **`formatTimeAgo` is new and module-private** (single consumer today). Output mirrors the old mock copy: "Just now" (< 1 min), `Nm ago`, `Nh ago`, "Yesterday", `N days ago`, then a `Month D` date fallback. `Date.parse` NaN → "Just now".
+- **Error policy matches the dashboard:** query failures log `[dashboard-data]` and degrade to `[]` — the card renders with no rows instead of crashing the page. Rows from the failing query are dropped; a partial result still renders.
+- **Verified:** `npx.cmd tsc --noEmit` and `npx.cmd eslint .` clean. Live entries need an authenticated session with completed `agent_runs` / researched `jobs` in the DB. `getMockCharts()` untouched (Feature 17).
 
 ### 15 Stats Bar — Real Data (2026-08-05)
 
