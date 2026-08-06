@@ -2,6 +2,11 @@ import { PostHog } from "posthog-node";
 
 type EventProperties = Record<string, unknown>;
 
+export const EVENT_JOB_FOUND = "job_found";
+export const EVENT_COMPANY_RESEARCHED = "company_researched";
+export const EVENT_PROFILE_COMPLETED = "profile_completed";
+export const PROP_MATCH_SCORE = "matchScore";
+
 const POSTHOG_QUERY_HOST = process.env.POSTHOG_QUERY_HOST ?? "https://eu.posthog.com";
 
 export async function runPostHogQuery(

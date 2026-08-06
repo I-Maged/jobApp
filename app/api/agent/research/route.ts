@@ -5,7 +5,28 @@ import { fetchJob } from "@/lib/jobs-data";
 import { fetchProfile } from "@/lib/profile-data";
 import { createInsforgeServer } from "@/lib/insforge-server";
 import { researchCompany } from "@/agent/research";
-import { captureServerEvent } from "@/lib/posthog-server";
+import { captureServerEvent, EVENT_COMPANY_RESEARCHED } from "@/lib/posthog-server";
+
+export const maxDuration = 300;
+
+const RESEARCH_DEADLINE_MS = 4 * 60_000;
+
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Timed out after ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 type ResearchRequestBody = {
   jobId?: unknown;
@@ -57,7 +78,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, dossier: job.company_research });
     }
 
-    const dossier = await researchCompany(job, profile);
+    const dossier = await withDeadline(
+      researchCompany(job, profile),
+      RESEARCH_DEADLINE_MS,
+    );
 
     const insforge = await createInsforgeServer();
     const { error } = await insforge.database
@@ -74,7 +98,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await captureServerEvent(user.id, "company_researched", {
+    await captureServerEvent(user.id, EVENT_COMPANY_RESEARCHED, {
       userId: user.id,
       jobId: job.id,
       company: job.company,

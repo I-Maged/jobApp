@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/get-current-user";
 import { fetchProfile } from "@/lib/profile-data";
 import { searchJobs } from "@/agent/adzuna";
 import { scoreJobAgainstProfile } from "@/agent/matcher";
-import { captureServerEventsBatch } from "@/lib/posthog-server";
+import { captureServerEventsBatch, EVENT_JOB_FOUND, PROP_MATCH_SCORE } from "@/lib/posthog-server";
 import { MATCH_THRESHOLD } from "@/lib/utils";
 import type { AdzunaJob, Job, ScoredJob } from "@/types";
 
@@ -287,10 +287,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { data: existingRows, error: existingError } =
+      await insforge.database
+        .from("jobs")
+        .select("source_url")
+        .eq("user_id", user.id);
+
+    if (existingError) {
+      console.error("[agent/find] fetch existing jobs", existingError);
+      await markRunFailed(insforge, currentRunId);
+      return NextResponse.json(
+        { success: false, error: "Failed to check existing jobs" },
+        { status: 500 },
+      );
+    }
+
+    const existingUrls = new Set(
+      (existingRows ?? [])
+        .map((row) => (row as { source_url?: string | null }).source_url)
+        .filter((url): url is string => Boolean(url)),
+    );
+
+    const uniqueRows = rowsToInsert.filter(
+      (row) => !existingUrls.has(row.source_url),
+    );
+
+    if (uniqueRows.length === 0) {
+      await markRunCompleted(insforge, currentRunId, 0);
+      return NextResponse.json({
+        success: true,
+        adzunaFound: adzunaJobs.length,
+        totalFound: 0,
+        strongMatches: 0,
+        results: [],
+      });
+    }
+
     const { data: insertedJobs, error: insertError } =
       await insforge.database
         .from("jobs")
-        .insert(rowsToInsert)
+        .insert(uniqueRows)
         .select();
 
     if (insertError) {
@@ -307,11 +343,11 @@ export async function POST(req: NextRequest) {
     await captureServerEventsBatch(
       user.id,
       savedJobs.map((sj) => ({
-        event: "job_found",
+        event: EVENT_JOB_FOUND,
         properties: {
           userId: user.id,
           source: "search",
-          matchScore: sj.match_score,
+          [PROP_MATCH_SCORE]: sj.match_score,
         },
       })),
     );

@@ -1,5 +1,10 @@
 import { createInsforgeServer } from "@/lib/insforge-server";
-import { runPostHogQuery } from "@/lib/posthog-server";
+import {
+  runPostHogQuery,
+  EVENT_JOB_FOUND,
+  EVENT_COMPANY_RESEARCHED,
+  PROP_MATCH_SCORE,
+} from "@/lib/posthog-server";
 
 export type StatCard = {
   label: string;
@@ -26,6 +31,8 @@ export type DashboardCharts = {
 };
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const MAX_STATS_ROWS = 500;
 
 type StatsRow = {
   match_score: number | null;
@@ -93,7 +100,9 @@ export async function fetchDashboardStats(userId: string): Promise<StatCard[]> {
   const { data, error } = await insforge.database
     .from("jobs")
     .select("match_score, company_research, found_at")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .order("found_at", { ascending: false })
+    .limit(MAX_STATS_ROWS);
 
   if (error) {
     console.error("[dashboard-data] fetch stats", error);
@@ -294,7 +303,7 @@ function buildMatchDistributionQuery(userId: string): string {
   const whens = reversed
     .slice(0, -1)
     .map(
-      ({ key, min }) => `WHEN properties.matchScore >= ${min} THEN '${key}'`,
+      ({ key, min }) => `WHEN properties.${PROP_MATCH_SCORE} >= ${min} THEN '${key}'`,
     )
     .join("\n       ");
   const lowest = reversed[reversed.length - 1];
@@ -303,8 +312,9 @@ function buildMatchDistributionQuery(userId: string): string {
        ELSE '${lowest.key}'
      END AS bucket, count() AS count
      FROM events
-     WHERE event = 'job_found' AND distinct_id = '${userId}'
-       AND properties.matchScore >= ${lowest.min}
+     WHERE event = '${EVENT_JOB_FOUND}' AND distinct_id = '${userId}'
+       AND timestamp >= toStartOfDay(now()) - INTERVAL 29 DAY
+       AND properties.${PROP_MATCH_SCORE} >= ${lowest.min}
      GROUP BY bucket`;
 }
 
@@ -314,7 +324,7 @@ async function loadDashboardCharts(userId: string): Promise<DashboardCharts> {
       "dashboard_jobs_found_over_time_30d",
       `SELECT toStartOfDay(timestamp) AS day, count() AS count
        FROM events
-       WHERE event = 'job_found' AND distinct_id = '${userId}'
+       WHERE event = '${EVENT_JOB_FOUND}' AND distinct_id = '${userId}'
          AND timestamp >= toStartOfDay(now()) - INTERVAL 29 DAY
        GROUP BY day ORDER BY day`,
     ),
@@ -322,7 +332,7 @@ async function loadDashboardCharts(userId: string): Promise<DashboardCharts> {
       "dashboard_company_researched_7d",
       `SELECT toStartOfDay(timestamp) AS day, count() AS count
        FROM events
-       WHERE event = 'company_researched' AND distinct_id = '${userId}'
+       WHERE event = '${EVENT_COMPANY_RESEARCHED}' AND distinct_id = '${userId}'
          AND timestamp >= toStartOfDay(now()) - INTERVAL 6 DAY
        GROUP BY day ORDER BY day`,
     ),

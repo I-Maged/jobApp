@@ -1,43 +1,44 @@
-# Memory — Feature 17 Analytics Charts PostHog Data
+# Memory — Whole-Project Code Review Fixes (In Progress)
 
-Last updated: 2026-08-05
+Last updated: 2026-08-06
 
 ## What was built
 
-- **`lib/posthog-server.ts`** — new `runPostHogQuery(name, query)`: `POST {POSTHOG_QUERY_HOST}/api/projects/{POSTHOG_PROJECT_ID}/query/` with `Authorization: Bearer {POSTHOG_PERSONAL_API_KEY}` and body `{ query: { kind: "HogQLQuery", query }, name }`. Plain `fetch` + `AbortSignal.timeout(10_000)`, `cache: "no-store"`. No-ops → `[]` (dev warning) when the key or project id env vars are unset; `[posthog-server]` logs on HTTP/throw failures.
-- **`lib/dashboard-data.ts`** — `getMockCharts()` + mock `buildDaySeries` deleted. New `fetchDashboardCharts(userId)` with three parallel per-user HogQL queries: `job_found` 30-day daily series, `company_researched` 7-day daily series, `job_found` `matchScore` distribution in the five fixed buckets. Series zero-filled to UTC calendar days with `M/D` labels (`buildCountSeries`); distribution maps SQL bucket keys → `MATCH_BUCKETS` (`buildMatchDistribution`). The SQL `CASE` is **generated from `MATCH_BUCKETS`** (`buildMatchDistributionQuery`) so keys can't drift. Non-UUID `userId` short-circuits with `[dashboard-data]` warning (also the injection guard).
-- **`app/dashboard/page.tsx`** — the three data fetches now run in parallel via `Promise.all`; `fetchDashboardCharts(user.id)` replaces `getMockCharts()`.
-- **`components/dashboard/AnalyticsCharts.tsx`** — Match Score Distribution subtitle changed to "Saved jobs scoring 50%+".
-- **Docs:** `.env.example` + `code-standards.md` env table add `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_QUERY_HOST`; `progress-tracker.md` marks Feature 17 done (build plan 17/17) + decision entry incl. post-review fixes; `ui-registry.md` pattern notes updated.
+Full-project review (all 23 commits on `main`, 134 files) → 23 findings (2 critical, 9 warnings, 12 suggestions). Plan written to `.kilo/plans/1785979227684-code-review-fixes.md`. User approved "fix everything". Fix groups applied so far:
+
+- **Group 1 (done):** Deleted `app/api/debug/research-test/route.ts` and `app/api/debug/stagehand-diag/route.ts` (unauthenticated, cost-abuse + stack-trace leak).
+- **Group 2 (done):** SSRF guard in `agent/research.ts` — `isPrivateIp`/`isBlockedHost` (uses `node:dns/promises` `lookup` + IP literal checks) and `isSafeHttpUrl`; applied pre-fetch, post-redirect in `deriveHomepageUrl`, and to the derived homepage URL before `page.goto`.
+- **Group 3 (done):** `proxy.ts` now cookie-presence check only (no `getCurrentUser()` call); `lib/get-current-user.ts` wrapped in try/catch → returns `null` instead of throwing.
+- **Group 4 (done):** `app/api/agent/research/route.ts` — `export const maxDuration = 300`, `withDeadline(researchCompany, 4min)` helper. `app/api/agent/find/route.ts` — dedupes job inserts against existing `source_url`s (fetches `select("source_url")`, filters, returns early with 0 when all dupes).
+- **Group 5 (partial):** `lib/posthog-server.ts` gained constants `EVENT_JOB_FOUND`, `EVENT_COMPANY_RESEARCHED`, `EVENT_PROFILE_COMPLETED`, `PROP_MATCH_SCORE`. `lib/jobs-data.ts` `fetchUserJobs` selects list columns + `.limit(500)` (`MAX_JOBS_LIST`, `JOBS_LIST_COLUMNS`). `lib/dashboard-data.ts` — `MAX_STATS_ROWS = 500` bound on `fetchDashboardStats` (order desc + limit), `buildMatchDistributionQuery` now has `timestamp >= toStartOfDay(now()) - INTERVAL 29 DAY` window, HogQL strings interpolate the PostHog constants.
 
 ## Decisions made
 
-- **Charts use the existing hand-rolled SVG components — no recharts** (user decision). The build-plan's recharts line is superseded; no new dependency added.
-- **Server-side PostHog queries go through the Query API, not `posthog-node`** — no new dep, plain fetch, personal API key with `query:read` scope. `POSTHOG_QUERY_HOST` defaults to `https://eu.posthog.com` (the app host — NOT the `eu.i.posthog.com` ingestion host).
-- **Per-user 60s TTL memo + in-flight dedup** (`chartCache`/`chartInFlight` maps) so overlapping loads fire one query burst, not 3 uncached queries per render — PostHog `/query` is rate-limited (240 req/min, 3 concurrent, shared per project). Empty results from failures are cached too (bounded stale-empty to 60s).
-- **Match distribution excludes sub-50 scores** (`properties.matchScore >= 50`); subtitle updated to match. `MATCH_BUCKETS` is the single source for both SQL CASE and TS labels.
-- **UTC days everywhere**: SQL windows use `toStartOfDay(now()) - INTERVAL 29 DAY` / `6 DAY` — aligned to the calendar-day fill (review fix; the rolling `now() - INTERVAL 30 DAY` window dropped the oldest partial day). PostHog's `toStartOfDay` uses the project timezone; EU cluster is UTC.
+- Deleted debug routes rather than dev-gating them (matches earlier "delete before Feature 13 commit" note).
+- SSRF guard uses DNS lookup + private-IP checks; unresolvable hostnames are treated as blocked.
+- Find-route dedupe is app-level (filter by existing `source_url`) — DB unique index on `(user_id, source_url)` deferred (schema may already contain duplicates).
+- `fetchDashboardStats` bounded with `.limit(500)` recent-first instead of a date window, to preserve all-time "Total Jobs Found" semantics.
+- Plan says: no commit unless asked; update `context/progress-tracker.md` per AGENTS.md after each group.
 
 ## Problems solved
 
-- PostHog Query API auth/response shape: personal key (`Bearer`) + `HogQLQuery` kind; response `results` is an array of rows (arrays). Confirmed against docs — no `posthog-node` needed.
-- No PostHog MCP server exists in this session — user opted to put a personal API key in `.env.local` instead. Key has NOT been added yet; charts render empty until it is.
-- Window misalignment bug (rolling vs calendar days) caught by `@review` and fixed.
+- Runtime error on dashboard: `MAX_STATS_ROWS is not defined` at `lib/dashboard-data.ts:103` (my edit referenced the constant before defining it) — fixed by adding the constant near `WEEK_MS`. Dashboard renders again.
 
 ## Current state
 
-- Build plan complete: 17/17. Verified `npx.cmd tsc --noEmit`, `npx.cmd eslint .`, and full `npm run build` all clean (build was last run after the review fixes).
-- Uncommitted working tree: Feature 17 changes (6 files: `app/dashboard/page.tsx`, `lib/dashboard-data.ts`, `lib/posthog-server.ts`, `components/dashboard/AnalyticsCharts.tsx`, `context/code-standards.md`, `context/progress-tracker.md`; `context/ui-registry.md` — check `git status`). Features 14–16 already committed (`3562a53` recent activity real data).
-- Live chart values need `POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID` in `.env.local` plus real `job_found` / `company_researched` events.
-- Feature 13 leftover: Stagehand `Validation failed` at `page.goto` (`agent/research.ts:267`) — research degrades to job+profile-only synthesis; diagnostic routes `app/api/debug/stagehand-diag` and `app/api/debug/research-test` exist, UNTESTED, and must be deleted before the Feature 13 commit.
-- InsForge `allowedRedirectUrls` is still empty; `.env.local` uses `npx.cmd` (not `npx`) due to the PowerShell execution-policy block on `.ps1` shims.
+- Working tree has MANY uncommitted changes from the fix pass; app was verified loading the dashboard after the constant fix (that was the last verification).
+- Done: Groups 1–4 complete; Group 5 partially complete.
+- Not yet done: dashboard-data `chartCache` lazy eviction; `app/dashboard/page.tsx` fold `fetchProfile` into `Promise.all`; `FindJobsClient` dedupe/cap (`handleResults`); `jobs-view.ts` `formatDate` hoist; `agent/research.ts` sub-page parallelization; Group 6 (shared `resume-storage.ts`, `dossier.ts`, `auth-constants.ts`, replace inline `auth.getCurrentUser()` in upload/extract/profile action with `getCurrentUser()`, `JobsTablePreview` uses `getScoreTier`, drop redundant `?? "citizen"/"any"` in `app/profile/page.tsx`, use `EVENT_PROFILE_COMPLETED` in `actions/profile.ts`); Group 7 (delete `lib/insforge-client.ts` + update its context-doc references, remove unused `csvToArray`/`arrayToCsv` exports).
+- Verification (`tsc`/`eslint`/`build`) NOT yet run after the fix pass.
+- `context/progress-tracker.md` / `context/ui-registry.md` not yet updated.
+- Nothing committed.
 
 ## Next session starts with
 
-Decide and commit: the working tree holds Feature 17 (plus the earlier dashboard work). Before committing — either fix/remove the Feature 13 Stagehand diagnostics, or commit Feature 17 separately first. Verify the git status and split the commits sensibly.
+Finish the remaining fix groups in `D:\career\jobapp\.kilo\plans\1785979227684-code-review-fixes.md`: complete Group 5 (cache eviction, dashboard `Promise.all`, FindJobsClient cap, `formatDate` hoist, sub-page parallel crawl), then Group 6 and Group 7. Then run `npx.cmd tsc --noEmit`, `npx.cmd eslint .`, `npm run build`, update `context/progress-tracker.md`, and review the diff before any commit decision.
 
 ## Open questions
 
-- Will the user paste `POSTHOG_PERSONAL_API_KEY` / `POSTHOG_PROJECT_ID` into `.env.local`? Charts stay empty until then.
-- Search-dedupe question (from Feature 10) still unresolved.
-- Feature 13 Stagehand: fix, remove, or keep degraded? The debug routes must go before that commit.
+- Commit the fix pass or split into per-group commits? (User hasn't decided.)
+- Add DB unique index `(user_id, source_url)` later via InsForge `run-raw-sql` once schema is known duplicate-free?
+- Old open items still pending: PostHog keys not in `.env.local` (charts render empty), search-dedupe (Feature 10), InsForge `allowedRedirectUrls` empty.

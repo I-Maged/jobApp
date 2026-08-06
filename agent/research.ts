@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lookup } from "node:dns/promises";
 import { Stagehand } from "@browserbasehq/stagehand";
 import { createBrowserbase } from "@/lib/browserbase";
 import { createStagehand } from "@/lib/stagehand";
@@ -154,6 +155,45 @@ function stripSubdomain(hostname: string): string {
   return lastTwo;
 }
 
+function isPrivateIp(ip: string): boolean {
+  const parts = ip.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
+    return false;
+  }
+  const [a, b] = parts;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a >= 224 && a <= 255)
+  );
+}
+
+async function isBlockedHost(hostname: string): Promise<boolean> {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host === "::1" || host === "0.0.0.0") return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return isPrivateIp(host);
+  try {
+    const { address } = await lookup(host);
+    return isPrivateIp(address);
+  } catch {
+    return true;
+  }
+}
+
+async function isSafeHttpUrl(url: URL | null): Promise<boolean> {
+  if (
+    !url ||
+    (url.protocol !== "http:" && url.protocol !== "https:")
+  ) {
+    return false;
+  }
+  return !(await isBlockedHost(url.hostname));
+}
+
 async function deriveHomepageUrl(job: Job): Promise<string> {
   if (job.source_url) {
     let target: URL | null;
@@ -163,18 +203,24 @@ async function deriveHomepageUrl(job: Job): Promise<string> {
       target = null;
     }
 
-    if (
-      target &&
-      (target.protocol === "http:" || target.protocol === "https:")
-    ) {
+    if (await isSafeHttpUrl(target)) {
       try {
         const response = await fetch(target, {
           redirect: "follow",
           signal: AbortSignal.timeout(10_000),
         });
-        const finalUrl = response.url;
-        if (finalUrl && !/adzuna\.com/i.test(finalUrl)) {
-          const hostname = new URL(finalUrl).hostname;
+        let finalParsed: URL | null = null;
+        try {
+          finalParsed = new URL(response.url);
+        } catch {
+          finalParsed = null;
+        }
+        if (
+          finalParsed &&
+          !/adzuna\.com/i.test(response.url) &&
+          (await isSafeHttpUrl(finalParsed))
+        ) {
+          const hostname = finalParsed.hostname;
           return `https://${stripSubdomain(hostname)}`;
         }
       } catch (error) {
@@ -246,6 +292,18 @@ async function collectWebsiteResearch(
     homepageUrl = await deriveHomepageUrl(job);
   } catch (error) {
     console.error("[agent/research] derive homepage url", error);
+    return null;
+  }
+
+  let homepageParsed: URL;
+  try {
+    homepageParsed = new URL(homepageUrl);
+  } catch {
+    console.warn("[agent/research] invalid homepage url", homepageUrl);
+    return null;
+  }
+  if (await isBlockedHost(homepageParsed.hostname)) {
+    console.warn("[agent/research] blocked homepage host", homepageParsed.hostname);
     return null;
   }
 
