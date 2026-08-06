@@ -145,7 +145,7 @@ const COMPOUND_TLDS = new Set([
   "com.ng", "com.gh", "com.ke", "co.ke",
 ]);
 
-function stripSubdomain(hostname: string): string {
+export function stripSubdomain(hostname: string): string {
   const parts = hostname.split(".");
   if (parts.length <= 2) return hostname;
   const lastTwo = parts.slice(-2).join(".");
@@ -155,7 +155,7 @@ function stripSubdomain(hostname: string): string {
   return lastTwo;
 }
 
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   const parts = ip.split(".").map((part) => Number(part));
   if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
     return false;
@@ -172,7 +172,7 @@ function isPrivateIp(ip: string): boolean {
   );
 }
 
-async function isBlockedHost(hostname: string): Promise<boolean> {
+export async function isBlockedHost(hostname: string): Promise<boolean> {
   const host = hostname.toLowerCase().replace(/\.$/, "");
   if (host === "localhost" || host === "::1" || host === "0.0.0.0") return true;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return isPrivateIp(host);
@@ -184,7 +184,7 @@ async function isBlockedHost(hostname: string): Promise<boolean> {
   }
 }
 
-async function isSafeHttpUrl(url: URL | null): Promise<boolean> {
+export async function isSafeHttpUrl(url: URL | null): Promise<boolean> {
   if (
     !url ||
     (url.protocol !== "http:" && url.protocol !== "https:")
@@ -194,7 +194,7 @@ async function isSafeHttpUrl(url: URL | null): Promise<boolean> {
   return !(await isBlockedHost(url.hostname));
 }
 
-async function deriveHomepageUrl(job: Job): Promise<string> {
+export async function deriveHomepageUrl(job: Job): Promise<string> {
   if (job.source_url) {
     let target: URL | null;
     try {
@@ -203,7 +203,7 @@ async function deriveHomepageUrl(job: Job): Promise<string> {
       target = null;
     }
 
-    if (await isSafeHttpUrl(target)) {
+    if (target && (await isSafeHttpUrl(target))) {
       try {
         const response = await fetch(target, {
           redirect: "follow",
@@ -240,7 +240,7 @@ async function deriveHomepageUrl(job: Job): Promise<string> {
   throw new Error("Could not derive a company homepage URL");
 }
 
-function pickSubPages(
+export function pickSubPages(
   links: HomepageLink[],
   homepageUrl: string,
 ): HomepageLink[] {
@@ -398,7 +398,7 @@ async function collectWebsiteResearch(
   }
 }
 
-function buildUserPrompt(
+export function buildUserPrompt(
   job: Job,
   profile: Profile,
   research: CollectedResearch | null,
@@ -438,7 +438,7 @@ function asStringArray(v: unknown): string[] {
     : [];
 }
 
-function mergeSources(
+export function mergeSources(
   modelSources: string[],
   visitedUrls: string[],
 ): string[] {
@@ -449,7 +449,7 @@ function mergeSources(
   return merged;
 }
 
-function asDossier(
+export function asDossier(
   raw: Record<string, unknown>,
   visitedUrls: string[],
 ): CompanyDossier {

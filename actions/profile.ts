@@ -37,14 +37,14 @@ export type SaveProfileInput = {
   preferredLocationsCsv: string;
 };
 
-function csvToArr(v: string): string[] {
+export function csvToArr(v: string): string[] {
   return v
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-function parseYears(v: string): number | null {
+export function parseYears(v: string): number | null {
   if (!v.trim()) return null;
   const n = Number.parseInt(v, 10);
   return Number.isFinite(n) && n >= 0 ? n : null;

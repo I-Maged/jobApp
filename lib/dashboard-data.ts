@@ -75,7 +75,7 @@ type ActivityEntry = {
 
 const ACTIVITY_LIMIT = 8;
 
-function formatTimeAgo(timestamp: string): string {
+export function formatTimeAgo(timestamp: string): string {
   const diffMs = Date.now() - Date.parse(timestamp);
   if (Number.isNaN(diffMs) || diffMs < 60_000) return "Just now";
 
@@ -251,7 +251,7 @@ function toCount(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function toDayKey(value: unknown): string | null {
+export function toDayKey(value: unknown): string | null {
   if (typeof value === "number") {
     return new Date(value * 1000).toISOString().slice(0, 10);
   }
@@ -264,7 +264,7 @@ function toDayKey(value: unknown): string | null {
   return null;
 }
 
-function buildCountSeries(rows: unknown[][], days: number): ChartPoint[] {
+export function buildCountSeries(rows: unknown[][], days: number): ChartPoint[] {
   const counts = new Map<string, number>();
   for (const row of rows) {
     const key = toDayKey(row[0]);
@@ -286,7 +286,7 @@ function buildCountSeries(rows: unknown[][], days: number): ChartPoint[] {
   return points;
 }
 
-function buildMatchDistribution(rows: unknown[][]): ChartPoint[] {
+export function buildMatchDistribution(rows: unknown[][]): ChartPoint[] {
   const counts = new Map<string, number>();
   for (const row of rows) {
     const key = String(row[0] ?? "");
@@ -298,7 +298,7 @@ function buildMatchDistribution(rows: unknown[][]): ChartPoint[] {
   }));
 }
 
-function buildMatchDistributionQuery(userId: string): string {
+export function buildMatchDistributionQuery(userId: string): string {
   const reversed = [...MATCH_BUCKETS].reverse();
   const whens = reversed
     .slice(0, -1)
